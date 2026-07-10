@@ -53,6 +53,65 @@ function collectLinkMeshes(joint: THREE.Object3D): THREE.Mesh[] {
   return meshes;
 }
 
+function makeAxisLabelSprite(text: string, color: string): THREE.Sprite {
+  const size = 96;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = color;
+  ctx.font = 'bold 68px Inter, system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, size / 2, size / 2 + 2);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.anisotropy = 4;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(0.055, 0.055, 0.055);
+  sprite.renderOrder = 10;
+  return sprite;
+}
+
+/** Ground-plane X/Y arrows at the base origin — matches dashboard axis colors. */
+function createGroundXYLegend(): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'xy-legend';
+  const z = 0.006;
+  const len = 0.42;
+  const origin = new THREE.Vector3(0, 0, z);
+
+  const xArrow = new THREE.ArrowHelper(
+    new THREE.Vector3(1, 0, 0),
+    origin,
+    len,
+    0xd97878,
+    0.07,
+    0.045,
+  );
+  const yArrow = new THREE.ArrowHelper(
+    new THREE.Vector3(0, 1, 0),
+    origin,
+    len,
+    0x8fbf8a,
+    0.07,
+    0.045,
+  );
+  group.add(xArrow, yArrow);
+
+  const xLabel = makeAxisLabelSprite('X', '#d97878');
+  xLabel.position.set(len + 0.05, 0, z + 0.01);
+  group.add(xLabel);
+
+  const yLabel = makeAxisLabelSprite('Y', '#8fbf8a');
+  yLabel.position.set(0, len + 0.05, z + 0.01);
+  group.add(yLabel);
+
+  return group;
+}
+
+const LEGEND_AXIS_LEN = 0.82;
+
 function makeLabelSprite(text: string): THREE.Sprite {
   const size = 128;
   const canvas = document.createElement('canvas');
@@ -82,10 +141,17 @@ function makeLabelSprite(text: string): THREE.Sprite {
 
 export default function RobotScene() {
   const mountRef = useRef<HTMLDivElement>(null);
+  const legendRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
+
+    const legendEl = legendRef.current;
+    const xLine = legendEl?.querySelector<SVGLineElement>('.axis-legend__line--x');
+    const yLine = legendEl?.querySelector<SVGLineElement>('.axis-legend__line--y');
+    const xText = legendEl?.querySelector<SVGTextElement>('.axis-legend__text--x');
+    const yText = legendEl?.querySelector<SVGTextElement>('.axis-legend__text--y');
 
     // ── Z-up world (base frame) ──────────────────────────────────────────
     THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -157,9 +223,7 @@ export default function RobotScene() {
     (grid.material as THREE.Material).opacity = 0.6;
     scene.add(grid);
 
-    // Base-frame axes helper (X red, Y green, Z blue) at the robot origin.
-    const axes = new THREE.AxesHelper(0.2);
-    scene.add(axes);
+    scene.add(createGroundXYLegend());
 
     // ── Markers that live outside the robot ──────────────────────────────
     const eeMarker = new THREE.Mesh(
@@ -354,6 +418,8 @@ export default function RobotScene() {
 
     // ── Render loop ──────────────────────────────────────────────────────
     const eeVec = new THREE.Vector3();
+    const legendX = new THREE.Vector3();
+    const legendY = new THREE.Vector3();
     let raf = 0;
     const tick = () => {
       raf = requestAnimationFrame(tick);
@@ -393,6 +459,31 @@ export default function RobotScene() {
       controls.autoRotate = v.autoRotate;
       controls.autoRotateSpeed = 1.0;
       controls.update();
+
+      // Screen-corner X/Y compass — world axes projected into the view plane.
+      legendX.set(1, 0, 0).applyQuaternion(camera.quaternion);
+      legendY.set(0, 1, 0).applyQuaternion(camera.quaternion);
+      const tip = (v: THREE.Vector3) => ({
+        x: v.x * LEGEND_AXIS_LEN,
+        y: -v.y * LEGEND_AXIS_LEN,
+      });
+      const xTip = tip(legendX);
+      const yTip = tip(legendY);
+      const labelAt = (v: THREE.Vector3) => ({
+        x: v.x * LEGEND_AXIS_LEN * 1.24,
+        y: -v.y * LEGEND_AXIS_LEN * 1.24,
+      });
+      const xLbl = labelAt(legendX);
+      const yLbl = labelAt(legendY);
+      xLine?.setAttribute('x2', String(xTip.x));
+      xLine?.setAttribute('y2', String(xTip.y));
+      yLine?.setAttribute('x2', String(yTip.x));
+      yLine?.setAttribute('y2', String(yTip.y));
+      xText?.setAttribute('x', String(xLbl.x));
+      xText?.setAttribute('y', String(xLbl.y));
+      yText?.setAttribute('x', String(yLbl.x));
+      yText?.setAttribute('y', String(yLbl.y));
+
       renderer.render(scene, camera);
     };
     tick();
@@ -431,5 +522,21 @@ export default function RobotScene() {
     };
   }, []);
 
-  return <div ref={mountRef} className="scene-host" />;
+  return (
+    <div ref={mountRef} className="scene-host">
+      <div ref={legendRef} className="axis-legend" aria-label="X and Y axis orientation">
+        <svg className="axis-legend__svg" viewBox="-1 -1 2 2" aria-hidden="true">
+          <circle className="axis-legend__origin" cx="0" cy="0" r="0.045" />
+          <line className="axis-legend__line axis-legend__line--x" x1="0" y1="0" x2="0.82" y2="0" />
+          <line className="axis-legend__line axis-legend__line--y" x1="0" y1="0" x2="0" y2="0.82" />
+          <text className="axis-legend__text axis-legend__text--x" x="1" y="0">
+            X
+          </text>
+          <text className="axis-legend__text axis-legend__text--y" x="0" y="-1">
+            Y
+          </text>
+        </svg>
+      </div>
+    </div>
+  );
 }
