@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "author": "Vantage Dry Run",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": 260, "left": 400, "attrs": {} },
+    { "type": "wokwi-servo", "id": "servo_j1", "top": 0, "left": -80, "attrs": { "name": "J1 - Base rotation" } },
+    { "type": "wokwi-servo", "id": "servo_j2", "top": 0, "left": 80, "attrs": { "name": "J2 - Shoulder" } },
+    { "type": "wokwi-servo", "id": "servo_j3", "top": 0, "left": 240, "attrs": { "name": "J3 - Elbow" } },
+    { "type": "wokwi-servo", "id": "servo_j4", "top": 0, "left": 400, "attrs": { "name": "J4 - Wrist joint 1" } },
+    { "type": "wokwi-servo", "id": "servo_j5", "top": 0, "left": 560, "attrs": { "name": "J5 - Wrist joint 2" } },
+    { "type": "wokwi-servo", "id": "servo_j6", "top": 0, "left": 720, "attrs": { "name": "J6 - Wrist joint 3" } },
+    { "type": "wokwi-9v-battery", "id": "servo_supply", "top": 260, "left": 780, "attrs": { "name": "External Servo Supply (5-6V stand-in)" } }
+  ],
+  "connections": [
+    ["servo_j1:PWM", "esp:D13", "green", []],
+    ["servo_j2:PWM", "esp:D14", "green", []],
+    ["servo_j3:PWM", "esp:D27", "green", []],
+    ["servo_j4:PWM", "esp:D26", "green", []],
+    ["servo_j5:PWM", "esp:D25", "green", []],
+    ["servo_j6:PWM", "esp:D33", "green", []],
+
+    ["servo_j1:V+", "servo_supply:+", "red", []],
+    ["servo_j2:V+", "servo_supply:+", "red", []],
+    ["servo_j3:V+", "servo_supply:+", "red", []],
+    ["servo_j4:V+", "servo_supply:+", "red", []],
+    ["servo_j5:V+", "servo_supply:+", "red", []],
+    ["servo_j6:V+", "servo_supply:+", "red", []],
+
+    ["servo_j1:GND", "servo_supply:-", "black", []],
+    ["servo_j2:GND", "servo_supply:-", "black", []],
+    ["servo_j3:GND", "servo_supply:-", "black", []],
+    ["servo_j4:GND", "servo_supply:-", "black", []],
+    ["servo_j5:GND", "servo_supply:-", "black", []],
+    ["servo_j6:GND", "servo_supply:-", "black", []],
+
+    ["servo_supply:-", "esp:GND.1", "black", []]
+  ]
+}
