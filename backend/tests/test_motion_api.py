@@ -82,6 +82,26 @@ def test_motion_jog_endpoint_accepts_diagonal_delta_in_one_request() -> None:
     assert payload["command"] == "jog"
 
 
+def test_motion_jog_endpoint_can_skip_trajectory_for_continuous_jog() -> None:
+    model = asyncio.run(_request("GET", "/api/robot/model")).json()
+    response = asyncio.run(
+        _request(
+            "POST",
+            "/api/motion/jog",
+            json={
+                "currentJoints": model["neutral_pose"],
+                "delta": {"x": 0.0, "y": 0.0, "z": -0.01},
+                "includeTrajectory": False,
+            },
+        )
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["trajectory"] == []
+
+
 def test_motion_jog_endpoint_rejects_missing_delta_coordinate() -> None:
     model = asyncio.run(_request("GET", "/api/robot/model")).json()
     response = asyncio.run(

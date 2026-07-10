@@ -52,7 +52,13 @@ class MotionPlanner:
             reason=result.reason,
         )
 
-    def jog(self, current_joints: dict[str, float], delta: Vector3) -> IKSolveResponse:
+    def jog(
+        self,
+        current_joints: dict[str, float],
+        delta: Vector3,
+        *,
+        include_trajectory: bool = True,
+    ) -> IKSolveResponse:
         start = clamp_joint_map(self.model, current_joints)
         current_tip = forward_kinematics(self.model, start).tip
         requested_delta = np.array([delta.x, delta.y, delta.z], dtype=float)
@@ -109,7 +115,11 @@ class MotionPlanner:
             result_tip=result.tip,
             error_meters=result.error_meters,
         ):
-            trajectory = build_joint_trajectory(self.model, start, result.joints, steps=self.trajectory_steps)
+            trajectory = (
+                build_joint_trajectory(self.model, start, result.joints, steps=self.trajectory_steps)
+                if include_trajectory
+                else []
+            )
             return IKSolveResponse(
                 success=True,
                 joints=result.joints,
