@@ -45,7 +45,7 @@ export default function JointSliders() {
               <span className="slider__name" title={j.name}>
                 {j.label}
               </span>
-              <div className="slider__value">
+              <div className={`slider__value ${useDegrees ? '' : 'slider__value--rad'}`}>
                 <input
                   className="slider__num"
                   type="text"
