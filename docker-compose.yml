@@ -1,6 +1,20 @@
 name: iut-techathon-onsite
 
 services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
   backend:
     build:
       context: .
@@ -17,8 +31,15 @@ services:
       - ./6_dof_arm.urdf:/app/6_dof_arm.urdf:ro
       - ./key.config.json:/app/key.config.json:ro
     healthcheck:
-      test: ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()"]
+      test:
+        [
+          "CMD",
+          ".venv/bin/python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()",
+        ]
       interval: 10s
       timeout: 3s
       retries: 5
       start_period: 10s
+    restart: unless-stopped

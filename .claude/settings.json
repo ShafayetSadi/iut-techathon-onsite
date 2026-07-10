@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(git --version)",
+      "Bash(docker --version)",
+      "Bash(timeout 8 curl -sI https://registry.npmjs.org/)",
+      "Bash(timeout 25 npm view urdf-loader version peerDependencies dependencies)",
+      "Bash(timeout 25 npm view three version)",
+      "Bash(npm install *)",
+      "Bash(node -e \"const p=require\\('./node_modules/urdf-loader/package.json'\\); console.log\\(JSON.stringify\\({main:p.main,module:p.module,types:p.types,exports:p.exports},null,2\\)\\)\")",
+      "Bash(PORT=3111 npm start)",
+      "Bash(echo \"started pid $!\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:3111/)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} type=%{content_type}\\\\n\" http://localhost:3111/urdf/6_dof_arm.urdf)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} type=%{content_type}\\\\n\" http://localhost:3111/config/key.config.json)",
+      "Bash(which chromium *)",
+      "Read(//home/arif/AAI-Qatar/AAI/frontend/node_modules/.bin/**)",
+      "Read(//home/arif/.cache/ms-playwright/**)",
+      "Bash(node verify.mjs)",
+      "Bash(pkill -f 'next start')",
+      "Bash(echo \"pid $!\")",
+      "Bash(curl -s -o /dev/null -w \"home HTTP %{http_code}\\\\n\" http://localhost:3111/)",
+      "Bash(node verify2.mjs)",
+      "Bash(node verify3.mjs)",
+      "Bash(node debug.mjs)",
+      "Bash(docker rm *)",
+      "Bash(docker run *)",
+      "Bash(curl -s -m 5 -o /dev/null -w \"container home: HTTP %{http_code}\\\\n\" http://localhost:3222/)",
+      "Bash(curl -s -m 5 -o /dev/null -w \"container URDF: HTTP %{http_code}\\\\n\" http://localhost:3222/urdf/6_dof_arm.urdf)"
+    ],
+    "additionalDirectories": [
+      "/home/arif/.claude/projects/-home-arif-hackathon-final-round-iut-techathon-onsite"
+    ]
+  }
+}

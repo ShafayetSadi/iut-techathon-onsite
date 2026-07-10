@@ -1,0 +1,408 @@
+'use client';
+
+/**
+ * RobotScene.tsx — the one Three.js host (this is "the tool").
+ *
+ * A single mounted component owns the renderer, scene, camera, OrbitControls,
+ * the URDF robot, the 6-key panel, and the interactive drag-to-rotate joints
+ * (reproducing gkjohnson's urdf-loaders viewer). It is a *renderer of* the
+ * authoritative motion store, never an owner of arm state:
+ *
+ *   render loop → read store.jointAngles → apply to robot → FK → write eePosition
+ *   drag / IK  → write store.jointAngles (never the robot directly)
+ *
+ * The whole scene is drawn in the base frame (world == base_link, Z-up), so the
+ * panel coordinates from key.config.json and the FK result line up with no frame
+ * conversion — the mitigation for the coordinate-frame risk.
+ */
+
+import { useEffect, useRef } from 'react';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { PointerURDFDragControls } from 'urdf-loader/src/URDFDragControls.js';
+import type { URDFJoint, URDFRobot } from 'urdf-loader';
+
+import { loadRobot, logRobotInfo } from '@/lib/robot/urdfLoad';
+import { applyJoints, forwardKinematics } from '@/lib/robot/robotAdapter';
+import { loadKeyConfig, toPanelKeys } from '@/lib/panel/keyConfig';
+import { useMotionStore } from '@/lib/motion/store';
+import { useViewerStore } from '@/lib/viewer/viewerStore';
+import { JOINT_NAMES } from '@/config/robot.config';
+
+const HIGHLIGHT = new THREE.Color('#f2991a'); // amber, matches the arm accents
+const KEY_COLOR = new THREE.Color('#3a7bd5');
+const KEY_COLOR_1 = new THREE.Color('#e94b6a'); // key "1" = also the test marker anchor
+
+/** Collect the meshes that belong directly to a joint's link, not deeper joints. */
+function collectLinkMeshes(joint: THREE.Object3D): THREE.Mesh[] {
+  const meshes: THREE.Mesh[] = [];
+  const walk = (node: THREE.Object3D) => {
+    for (const child of node.children) {
+      if ((child as unknown as URDFJoint).isURDFJoint) continue; // stop at nested joints
+      if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
+      walk(child);
+    }
+  };
+  walk(joint);
+  return meshes;
+}
+
+function makeLabelSprite(text: string): THREE.Sprite {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  ctx.beginPath();
+  ctx.arc(size / 2, size / 2, size / 2 - 4, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(11,14,17,0.85)';
+  ctx.fill();
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = '#f2991a';
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 72px Inter, system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, size / 2, size / 2 + 4);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.anisotropy = 4;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(0.045, 0.045, 0.045);
+  sprite.renderOrder = 10;
+  return sprite;
+}
+
+export default function RobotScene() {
+  const mountRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+
+    // ── Z-up world (base frame) ──────────────────────────────────────────
+    THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#0b0e11');
+    scene.fog = new THREE.Fog('#0b0e11', 4, 12);
+
+    const width = mount.clientWidth || 800;
+    const height = mount.clientHeight || 600;
+
+    const camera = new THREE.PerspectiveCamera(50, width / height, 0.01, 100);
+    camera.up.set(0, 0, 1);
+    camera.position.set(1.7, -1.7, 1.35);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(width, height);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    mount.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.target.set(0, 0, 0.6);
+    controls.minDistance = 0.4;
+    controls.maxDistance = 6;
+
+    // ── Lights ───────────────────────────────────────────────────────────
+    scene.add(new THREE.HemisphereLight('#c8d4e0', '#1a1d22', 0.9));
+    const ambient = new THREE.AmbientLight('#ffffff', 0.25);
+    scene.add(ambient);
+    const key = new THREE.DirectionalLight('#ffffff', 1.7);
+    key.position.set(0.8, -1.1, 2.2);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.camera.near = 0.1;
+    key.shadow.camera.far = 8;
+    const s = 1.6;
+    key.shadow.camera.left = -s;
+    key.shadow.camera.right = s;
+    key.shadow.camera.top = s;
+    key.shadow.camera.bottom = -s;
+    key.shadow.bias = -0.0004;
+    scene.add(key);
+
+    // ── Ground + grid (XY plane at z=0 in the Z-up world) ─────────────────
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(12, 12),
+      new THREE.ShadowMaterial({ opacity: 0.35 }),
+    );
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const grid = new THREE.GridHelper(12, 48, 0x2a3038, 0x1b2026);
+    grid.rotation.x = Math.PI / 2; // lay flat in XY for the Z-up world
+    (grid.material as THREE.Material).transparent = true;
+    (grid.material as THREE.Material).opacity = 0.6;
+    scene.add(grid);
+
+    // Base-frame axes helper (X red, Y green, Z blue) at the robot origin.
+    const axes = new THREE.AxesHelper(0.2);
+    scene.add(axes);
+
+    // ── Markers that live outside the robot ──────────────────────────────
+    const eeMarker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.012, 16, 16),
+      new THREE.MeshStandardMaterial({ color: '#3ddc84', emissive: '#0f5c33', emissiveIntensity: 0.6 }),
+    );
+    eeMarker.renderOrder = 5;
+    scene.add(eeMarker);
+
+    const targetMarker = new THREE.Mesh(
+      new THREE.TorusGeometry(0.02, 0.004, 12, 24),
+      new THREE.MeshStandardMaterial({ color: '#f2c94c', emissive: '#5c4a0f', emissiveIntensity: 0.6 }),
+    );
+    targetMarker.visible = false;
+    scene.add(targetMarker);
+
+    let testMarker: THREE.Mesh | null = null;
+    const labelSprites: THREE.Sprite[] = [];
+
+    // ── State refs used by the render loop ───────────────────────────────
+    let robot: URDFRobot | null = null;
+    let colliderNodes: THREE.Object3D[] = [];
+    let disposed = false;
+
+    const motion = useMotionStore;
+    const viewer = useViewerStore;
+
+    // ── Load the robot + panel ───────────────────────────────────────────
+    (async () => {
+      try {
+        robot = await loadRobot();
+        if (disposed) return;
+        logRobotInfo(robot);
+
+        // Prep collision geometry: translucent, hidden until toggled.
+        colliderNodes = Object.values(robot.colliders);
+        for (const node of colliderNodes) {
+          node.visible = false;
+          node.traverse((c) => {
+            const m = c as THREE.Mesh;
+            if (m.isMesh) {
+              m.material = new THREE.MeshBasicMaterial({
+                color: '#00e5ff',
+                wireframe: true,
+                transparent: true,
+                opacity: 0.5,
+              });
+            }
+          });
+        }
+
+        scene.add(robot);
+        motion.getState().setRobotReady(true);
+        motion.getState().pushLog(
+          `URDF loaded: ${Object.keys(robot.joints).length} joints, EE = stylus_tip.`,
+          'ok',
+        );
+
+        // Panel + labels + test marker.
+        const cfg = await loadKeyConfig();
+        if (disposed) return;
+        const keys = toPanelKeys(cfg);
+
+        const panelGroup = new THREE.Group();
+        panelGroup.name = 'panel';
+
+        // Backing plate spanning the keys.
+        const xs = keys.map((k) => k.position.x);
+        const ys = keys.map((k) => k.position.y);
+        const zPlate = Math.min(...keys.map((k) => k.position.z)) - 0.006;
+        const plate = new THREE.Mesh(
+          new THREE.BoxGeometry(
+            Math.max(...xs) - Math.min(...xs) + 0.05,
+            Math.max(...ys) - Math.min(...ys) + 0.05,
+            0.008,
+          ),
+          new THREE.MeshStandardMaterial({ color: '#171b20', roughness: 0.9, metalness: 0.1 }),
+        );
+        plate.position.set(
+          (Math.max(...xs) + Math.min(...xs)) / 2,
+          (Math.max(...ys) + Math.min(...ys)) / 2,
+          zPlate,
+        );
+        plate.receiveShadow = true;
+        panelGroup.add(plate);
+
+        for (const k of keys) {
+          const isKey1 = k.label === '1';
+          const box = new THREE.Mesh(
+            new THREE.BoxGeometry(0.03, 0.03, 0.016),
+            new THREE.MeshStandardMaterial({
+              color: isKey1 ? KEY_COLOR_1 : KEY_COLOR,
+              emissive: isKey1 ? '#4a1420' : '#0e2440',
+              emissiveIntensity: 0.5,
+              roughness: 0.5,
+            }),
+          );
+          box.castShadow = true;
+          box.receiveShadow = true;
+          box.position.set(k.position.x, k.position.y, k.position.z);
+          panelGroup.add(box);
+
+          const label = makeLabelSprite(k.label);
+          label.position.set(k.position.x, k.position.y, k.position.z + 0.03);
+          panelGroup.add(label);
+          labelSprites.push(label);
+        }
+        scene.add(panelGroup);
+
+        // §7 sanity check: a bright test marker dropped at key "1"'s exact
+        // coordinate. If it sits on the key box, the base/panel frames agree.
+        const key1 = keys.find((k) => k.label === '1');
+        if (key1) {
+          testMarker = new THREE.Mesh(
+            new THREE.SphereGeometry(0.008, 16, 16),
+            new THREE.MeshBasicMaterial({ color: '#ff00e5' }),
+          );
+          testMarker.position.set(key1.position.x, key1.position.y, key1.position.z);
+          testMarker.renderOrder = 6;
+          scene.add(testMarker);
+        }
+
+        motion.getState().pushLog(
+          `Panel rendered: ${keys.length} keys (${cfg.units}, frame ${cfg.frame}).`,
+          'ok',
+        );
+      } catch (err) {
+        motion.getState().pushLog(
+          `Failed to load robot/panel: ${(err as Error).message}`,
+          'error',
+        );
+        // eslint-disable-next-line no-console
+        console.error(err);
+      }
+    })();
+
+    // ── Interactive joint drag (gkjohnson-style) ─────────────────────────
+    const highlighted = new Map<THREE.Mesh, THREE.Color>();
+    const clearHighlight = () => {
+      highlighted.forEach((color, mesh) => {
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        if (mat.emissive) mat.emissive.copy(color);
+      });
+      highlighted.clear();
+    };
+
+    const dragControls = new PointerURDFDragControls(scene, camera, renderer.domElement);
+
+    // Route joint manipulation through the store — keep it the single source
+    // of truth. The robot updates on the next render-loop tick.
+    dragControls.updateJoint = (joint: URDFJoint, angle: number) => {
+      motion.getState().setJointByName(joint.name, angle);
+    };
+    dragControls.onHover = (joint: URDFJoint) => {
+      controls.enabled = false; // don't orbit while a joint is grabbable
+      renderer.domElement.style.cursor = 'grab';
+      viewer.getState().setHoveredJoint(joint.name);
+      for (const mesh of collectLinkMeshes(joint)) {
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        if (mat.emissive && !highlighted.has(mesh)) {
+          highlighted.set(mesh, mat.emissive.clone());
+          mat.emissive.copy(HIGHLIGHT);
+        }
+      }
+    };
+    dragControls.onUnhover = () => {
+      controls.enabled = true;
+      renderer.domElement.style.cursor = '';
+      viewer.getState().setHoveredJoint(null);
+      clearHighlight();
+    };
+    dragControls.onDragStart = () => {
+      renderer.domElement.style.cursor = 'grabbing';
+      motion.getState().setMode('jog');
+      motion.getState().setStatus('moving');
+    };
+    dragControls.onDragEnd = () => {
+      renderer.domElement.style.cursor = 'grab';
+      motion.getState().setStatus('ready');
+    };
+
+    // ── Render loop ──────────────────────────────────────────────────────
+    const eeVec = new THREE.Vector3();
+    let raf = 0;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const m = motion.getState();
+      const v = viewer.getState();
+
+      if (robot) {
+        // Apply authoritative angles (with ignore-limits reflected on the robot).
+        for (const name of JOINT_NAMES) {
+          const j = robot.joints[name];
+          if (j) j.ignoreLimits = m.ignoreLimits;
+        }
+        applyJoints(robot, m.jointAngles);
+        robot.updateMatrixWorld(true);
+
+        // FK → write EE back to the store.
+        const ee = forwardKinematics(robot);
+        m.setEEPosition(ee);
+        eeVec.set(ee.x, ee.y, ee.z);
+        eeMarker.position.copy(eeVec);
+        eeMarker.visible = v.showEEMarker;
+
+        // Collision + label + marker visibility toggles.
+        for (const node of colliderNodes) node.visible = v.showCollision;
+        for (const sp of labelSprites) sp.visible = v.showKeyLabels;
+        if (testMarker) testMarker.visible = v.showTestMarker;
+
+        // Target ring.
+        if (m.target) {
+          targetMarker.position.set(m.target.x, m.target.y, m.target.z);
+          targetMarker.visible = true;
+        } else {
+          targetMarker.visible = false;
+        }
+      }
+
+      controls.autoRotate = v.autoRotate;
+      controls.autoRotateSpeed = 1.0;
+      controls.update();
+      renderer.render(scene, camera);
+    };
+    tick();
+
+    // ── Resize ───────────────────────────────────────────────────────────
+    const onResize = () => {
+      const w = mount.clientWidth;
+      const h = mount.clientHeight;
+      if (w === 0 || h === 0) return;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    };
+    const ro = new ResizeObserver(onResize);
+    ro.observe(mount);
+
+    // ── Cleanup ──────────────────────────────────────────────────────────
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      dragControls.dispose();
+      controls.dispose();
+      renderer.dispose();
+      scene.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (mesh.geometry) mesh.geometry.dispose();
+        const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
+        if (Array.isArray(mat)) mat.forEach((mm) => mm.dispose());
+        else mat?.dispose();
+      });
+      if (renderer.domElement.parentNode === mount) {
+        mount.removeChild(renderer.domElement);
+      }
+      motion.getState().setRobotReady(false);
+    };
+  }, []);
+
+  return <div ref={mountRef} className="scene-host" />;
+}
