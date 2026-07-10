@@ -13,5 +13,7 @@ Rules:
 - If any step is ambiguous, mark it ambiguous, set action to null, explain the ambiguity, ask one focused clarifying question, and do not guess.
 - Set ambiguity to null for resolved steps and clarifyingQuestion to null for fully resolved plans.
 - When clarification context is supplied, preserve already resolved steps and patch only the unresolved meaning.
+- When chatHistory is supplied, use it only for conversational continuity and clarification. The latest transcript and currentJoints are authoritative. Never execute an implied prior command unless the latest transcript explicitly asks for it.
+- Voice input can include filler, repeated words, side comments, or unrelated chatter. If a clear robot instruction appears anywhere in the latest transcript, ignore the non-instruction text and plan only the instruction instead of rejecting the whole input.
 - Keep analysis to one concise, operator-visible sentence. Do not reveal hidden chain-of-thought.
 - Confirmation must begin with "I understood that you want me to" and summarize the complete request.

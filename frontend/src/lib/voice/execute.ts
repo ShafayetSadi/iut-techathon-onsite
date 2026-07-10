@@ -1,7 +1,7 @@
 import type { MotionCommand, MotionResult } from '@/lib/motion/commands';
 import { useMotionStore } from '@/lib/motion/store';
 import { JOINT_NAMES } from '@/config/robot.config';
-import { interpretAgent, type AgentPendingPlan, type AgentResponse } from './agentApi';
+import { interpretAgent, type AgentChatMessage, type AgentPendingPlan, type AgentResponse } from './agentApi';
 import type { Resolution } from './matcher';
 
 export type VoiceAction =
@@ -51,7 +51,7 @@ let inFlight = false;
 
 export async function executeVoiceCommand(
   resolution: Resolution,
-  options: { transcript?: string; pendingPlan?: AgentPendingPlan } = {},
+  options: { transcript?: string; pendingPlan?: AgentPendingPlan; chatHistory?: AgentChatMessage[] } = {},
 ): Promise<VoiceOutcome> {
   const state = useMotionStore.getState();
   const action = decideVoiceAction(resolution, {
@@ -76,7 +76,13 @@ export async function executeVoiceCommand(
     }
 
     const before = [...useMotionStore.getState().jointAngles];
-    const agentResult = await interpretAgent(action.transcript, action.resolution, before, action.pendingPlan);
+    const agentResult = await interpretAgent(
+      action.transcript,
+      action.resolution,
+      before,
+      action.pendingPlan,
+      options.chatHistory,
+    );
     if (agentResult.status === 'needs_clarification') return { agentResult };
     if (agentResult.status === 'rejected' || !agentResult.command) {
       return {
