@@ -116,6 +116,28 @@ describe('motion store safety dispatch', () => {
     });
   });
 
+  it('keeps successful continuous jog ticks out of the event log', async () => {
+    vi.mocked(backend.jogCartesian).mockResolvedValue({
+      success: true,
+      joints: { joint_1: 0.1 },
+      tip: { x: 0.005, y: 0, z: 0 },
+      errorMeters: 0.0001,
+      trajectory: [],
+    });
+
+    const result = await useMotionStore.getState().dispatch({
+      type: 'jog_cartesian',
+      delta: { x: 0.005, y: 0, z: 0 },
+      frame: 'world',
+      continuous: true,
+      requestedStepMm: 5,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(useMotionStore.getState().lastCommand).toContain('jog_cartesian');
+    expect(useMotionStore.getState().log).toHaveLength(0);
+  });
+
   it('does not write final IK joints after stop changes the epoch', async () => {
     vi.useFakeTimers();
     try {

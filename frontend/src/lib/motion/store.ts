@@ -86,7 +86,7 @@ export interface MotionState {
     response: IkResponse,
     successLog: string,
     epoch: number,
-    options?: { animateTrajectory?: boolean },
+    options?: { animateTrajectory?: boolean; quietSuccess?: boolean },
   ) => Promise<MotionResult>;
 
   setJoints: (angles: number[]) => void;
@@ -110,6 +110,8 @@ export interface MotionState {
 
 const MAX_LOG = 200;
 let jogCanceller: (() => void) | null = null;
+
+type LogOptions = { quietSuccess?: boolean };
 
 export function registerJogCanceller(fn: (() => void) | null): void {
   jogCanceller = fn;
@@ -181,14 +183,26 @@ function formatFinalState(
 }
 
 export const useMotionStore = create<MotionState>((set, get) => {
-  const logInput = (commandId: string, cmd: MotionCommand) => {
+  const logInput = (
+    commandId: string,
+    cmd: MotionCommand,
+    options: LogOptions = {},
+  ) => {
     const commandText = describeMotionCommand(cmd);
     set({ lastCommand: commandText });
-    get().pushLog(`[${commandId}] input -> ${commandText}`, "info");
+    if (!options.quietSuccess) {
+      get().pushLog(`[${commandId}] input -> ${commandText}`, "info");
+    }
     return commandText;
   };
 
-  const logValidation = (commandId: string, ok: boolean, detail?: string) => {
+  const logValidation = (
+    commandId: string,
+    ok: boolean,
+    detail?: string,
+    options: LogOptions = {},
+  ) => {
+    if (ok && options.quietSuccess) return;
     get().pushLog(
       `[${commandId}] validation -> ${ok ? "pass" : `fail${detail ? ` (${detail})` : ""}`}`,
       ok ? "ok" : "error",
@@ -199,17 +213,25 @@ export const useMotionStore = create<MotionState>((set, get) => {
     commandId: string,
     detail: string,
     level: LogLevel = "info",
+    options: LogOptions = {},
   ) => {
+    if (level !== "error" && options.quietSuccess) return;
     get().pushLog(`[${commandId}] backend -> ${detail}`, level);
   };
 
-  const logFinalState = (commandId: string, result: MotionResult) => {
+  const logFinalState = (
+    commandId: string,
+    result: MotionResult,
+    options: LogOptions = {},
+  ) => {
     if (result.ok) {
       set({ lastError: null });
-      get().pushLog(
-        `[${commandId}] final state -> ${formatFinalState(result)}`,
-        "info",
-      );
+      if (!options.quietSuccess) {
+        get().pushLog(
+          `[${commandId}] final state -> ${formatFinalState(result)}`,
+          "info",
+        );
+      }
       return result;
     }
 
@@ -252,7 +274,10 @@ export const useMotionStore = create<MotionState>((set, get) => {
 
     dispatch: async (cmd, context = {}) => {
       const commandId = nextCommandId();
-      logInput(commandId, cmd);
+      const logOptions = {
+        quietSuccess: cmd.type === "jog_cartesian" && cmd.continuous === true,
+      };
+      logInput(commandId, cmd, logOptions);
       const agentToken = get().agentExecutionToken;
       if (
         agentToken &&
@@ -276,7 +301,7 @@ export const useMotionStore = create<MotionState>((set, get) => {
           reason: gate.reason,
         });
       }
-      logValidation(commandId, true);
+      logValidation(commandId, true, undefined, logOptions);
       const epoch = get().stopEpoch;
 
       if (
@@ -382,6 +407,7 @@ export const useMotionStore = create<MotionState>((set, get) => {
               commandId,
               `${response.success ? "ok" : "fail"} (${response.reason ?? "cartesian jog"})`,
               response.success ? "ok" : "error",
+              logOptions,
             );
             const actualMm = response.tip
               ? tipDistanceMm(before, response.tip)
@@ -397,6 +423,7 @@ export const useMotionStore = create<MotionState>((set, get) => {
               epoch,
               {
                 animateTrajectory: cmd.continuous !== true,
+                quietSuccess: cmd.continuous === true,
               },
             );
           }
@@ -646,6 +673,7 @@ export const useMotionStore = create<MotionState>((set, get) => {
       epoch: number,
       options = {},
     ) => {
+      const quietSuccess = options.quietSuccess === true;
       if (get().stopEpoch !== epoch) {
         return logFinalState(commandId, cancelled(commandId));
       }
@@ -685,7 +713,9 @@ export const useMotionStore = create<MotionState>((set, get) => {
         response.errorMeters == null
           ? ""
           : ` error ${(response.errorMeters * 1000).toFixed(1)} mm`;
-      get().pushLog(`${successLog}${errorMm}`, "ok");
+      if (!quietSuccess) {
+        get().pushLog(`${successLog}${errorMm}`, "ok");
+      }
       return logFinalState(commandId, {
         commandId,
         ok: true,
@@ -695,7 +725,7 @@ export const useMotionStore = create<MotionState>((set, get) => {
             : response.errorMeters <= 0.005,
         finalJoints: jointMapToArray(response.joints),
         finalEE: response.tip,
-      });
+      }, { quietSuccess });
     },
 
     setJoint: (index, value) => {

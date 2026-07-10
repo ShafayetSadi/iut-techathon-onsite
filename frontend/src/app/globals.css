@@ -432,6 +432,51 @@ body {
   flex-direction: column;
   gap: 12px;
 }
+.manual-step {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.manual-step__label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.manual-step__options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+}
+.manual-step__btn {
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: calc(var(--radius-sm) - 2px);
+  padding: 8px 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  transition:
+    background 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.manual-step__btn:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+.manual-step__btn--active {
+  color: var(--text);
+  background: var(--panel-3);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
 .manual-control__joystick {
   position: relative;
   z-index: 0;
