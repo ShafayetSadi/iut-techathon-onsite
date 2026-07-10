@@ -25,6 +25,7 @@ class MotionPlanner:
         self.solver = solver
         self.safety = safety
         self.trajectory_steps = trajectory_steps
+        self.max_tip_z_m = float(forward_kinematics(self.model, self.model.neutral_pose()).tip[2])
 
     def solve_target(
         self,
@@ -64,6 +65,22 @@ class MotionPlanner:
         self.safety.validate_target(target)
 
         target_tip = np.array([target.x, target.y, target.z], dtype=float)
+        reachable_boundary_reason = self._reachable_boundary_block_reason(
+            current_tip=current_tip,
+            requested_delta=requested_delta,
+            target_tip=target_tip,
+        )
+        if reachable_boundary_reason is not None:
+            return IKSolveResponse(
+                success=False,
+                joints=None,
+                tip={"x": float(current_tip[0]), "y": float(current_tip[1]), "z": float(current_tip[2])},
+                errorMeters=requested_m,
+                iterations=0,
+                trajectory=[],
+                reason=reachable_boundary_reason,
+            )
+
         singular_vertical_mode = self._singular_vertical_jog_mode(
             current_tip=current_tip,
             requested_delta=requested_delta,
@@ -230,3 +247,27 @@ class MotionPlanner:
             return "Jog blocked: already at bottom of reachable workspace."
 
         return None
+
+    def _reachable_boundary_block_reason(
+        self,
+        *,
+        current_tip: np.ndarray,
+        requested_delta: np.ndarray,
+        target_tip: np.ndarray,
+    ) -> str | None:
+        requested_m = float(np.linalg.norm(requested_delta))
+        if requested_m <= 0.0:
+            return None
+
+        requested_unit = requested_delta / requested_m
+        if float(requested_unit[2]) <= 0.9:
+            return None
+
+        top_tolerance_m = max(self.solver.tolerance_m, 0.001)
+        if float(target_tip[2]) <= self.max_tip_z_m + top_tolerance_m:
+            return None
+
+        if float(current_tip[2]) >= self.max_tip_z_m - max(requested_m, top_tolerance_m):
+            return "Jog blocked: already at top of reachable workspace."
+
+        return "Jog blocked: requested target is above the arm's reachable workspace."

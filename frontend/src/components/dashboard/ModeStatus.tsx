@@ -8,6 +8,10 @@ const STATUS_STYLE: Record<string, string> = {
   error: 'pill pill--err',
 };
 
+function compactStatusText(text: string): string {
+  return text.length > 64 ? `${text.slice(0, 61)}...` : text;
+}
+
 export default function ModeStatus() {
   const mode = useMotionStore((s) => s.mode);
   const status = useMotionStore((s) => s.status);
@@ -21,7 +25,11 @@ export default function ModeStatus() {
       <span className={robotReady ? 'pill pill--ok' : 'pill pill--warn'}>
         {robotReady ? 'URDF ready' : 'loading…'}
       </span>
-      {lastError ? <span className="pill pill--err">last error: {lastError}</span> : null}
+      {lastError ? (
+        <span className="pill pill--err pill--last-error" title={`last error: ${lastError}`}>
+          last error: {compactStatusText(lastError)}
+        </span>
+      ) : null}
     </div>
   );
 }
