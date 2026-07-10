@@ -11,7 +11,6 @@ function metersFromMm(value: string): number {
 
 export default function CartesianControls() {
   const dispatch = useMotionStore((s) => s.dispatch);
-  const eePosition = useMotionStore((s) => s.eePosition);
   const status = useMotionStore((s) => s.status);
   const [target, setTarget] = useState({ x: "550", y: "-50", z: "50" });
 
@@ -22,14 +21,6 @@ export default function CartesianControls() {
       z: metersFromMm(target.z),
     };
     void dispatch({ type: "move_to", target: next });
-  };
-
-  const loadCurrent = () => {
-    setTarget({
-      x: (eePosition.x * 1000).toFixed(0),
-      y: (eePosition.y * 1000).toFixed(0),
-      z: (eePosition.z * 1000).toFixed(0),
-    });
   };
 
   return (
@@ -57,9 +48,6 @@ export default function CartesianControls() {
           disabled={status === "moving"}
         >
           Solve &amp; move
-        </button>
-        <button className="btn" type="button" onClick={loadCurrent}>
-          Use current EE
         </button>
       </div>
     </div>

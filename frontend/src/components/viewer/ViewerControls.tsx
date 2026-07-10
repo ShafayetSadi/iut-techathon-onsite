@@ -25,8 +25,6 @@ function Toggle({ label, k }: { label: string; k: ToggleKey }) {
 
 export default function ViewerControls() {
   const home = useMotionStore((s) => s.home);
-  const ignoreLimits = useMotionStore((s) => s.ignoreLimits);
-  const setIgnoreLimits = useMotionStore((s) => s.setIgnoreLimits);
   const useDegrees = useViewerStore((s) => s.useDegrees);
   const set = useViewerStore((s) => s.set);
 
@@ -74,22 +72,6 @@ export default function ViewerControls() {
         </button>
       </div>
 
-      <details className="controls__advanced">
-        <summary className="controls__advanced-head">Advanced</summary>
-        <button
-          className={`toggle ${ignoreLimits ? 'toggle--on' : ''}`}
-          onClick={() => setIgnoreLimits(!ignoreLimits)}
-          title="Diagnostic only: widens manual drag and slider bounds. Motion commands still pass through validation."
-          type="button"
-        >
-          <span className="toggle__dot" />
-          Widen sliders
-        </button>
-      </details>
-
-      <p className="controls__hint">
-        Drag a joint in the 3D view to rotate it · drag empty space to orbit · scroll to zoom
-      </p>
     </div>
   );
 }

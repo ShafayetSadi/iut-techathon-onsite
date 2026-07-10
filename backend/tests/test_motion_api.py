@@ -169,6 +169,21 @@ def test_motion_planner_jog_moves_for_one_millimeter_step() -> None:
     assert response.error_meters <= 0.0005
 
 
+def test_motion_planner_jog_up_near_base_axis_below_top() -> None:
+    planner = get_motion_planner()
+    angles_deg = [0.0, 89.6, -115.6, 0.0, 16.9, 0.0, 1.1]
+    current = dict(zip(planner.model.controlled_joint_names, [radians(value) for value in angles_deg], strict=True))
+    before = forward_kinematics(planner.model, current).tip
+    assert before[2] < 1.25
+
+    response = planner.jog(current, Vector3(x=0.0, y=0.0, z=0.01))
+
+    assert response.success, response.reason
+    assert response.tip is not None
+    assert response.tip["z"] > before[2] + 0.008
+    assert response.reason is None
+
+
 def test_motion_planner_jog_accepts_useful_near_miss_at_tolerance_edge() -> None:
     planner = get_motion_planner()
     angles_deg = [-0.6, -23.6, -0.3, -37.7, 0.1, -2.8, 0.0]

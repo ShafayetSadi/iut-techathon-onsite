@@ -14,6 +14,7 @@ const SOURCE_LABEL: Record<string, string> = {
 export default function CommandInspector() {
   const mode = useMotionStore((s) => s.mode);
   const status = useMotionStore((s) => s.status);
+  const log = useMotionStore((s) => s.log);
   const activePin = useMotionStore((s) => s.activePin);
   const pinProgress = useMotionStore((s) => s.pinProgress);
   const continuousJogActive = useMotionStore((s) => s.continuousJogActive);
@@ -24,6 +25,10 @@ export default function CommandInspector() {
   const activeStep = pinProgress.find((step) => step.status === 'moving');
   const completedSteps = pinProgress.filter((step) => step.status === 'pressed').length;
   const showLatestVoice = mode === 'idle' && latestVoice;
+  const latestError =
+    status === 'error'
+      ? [...log].reverse().find((entry) => entry.level === 'error')
+      : null;
 
   let command = '—';
   let safety = '—';
@@ -63,7 +68,7 @@ export default function CommandInspector() {
   } else if (continuousJogActive || mode === 'jog') {
     command = 'JOG CARTESIAN';
     detail = 'Continuous world-frame jog';
-    safety = 'VALIDATED';
+    safety = latestError ? `BLOCKED · ${latestError.text}` : 'VALIDATED';
   }
 
   return (
