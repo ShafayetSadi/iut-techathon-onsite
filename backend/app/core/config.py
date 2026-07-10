@@ -22,9 +22,18 @@ class Settings(BaseSettings):
     # this backend instead. Set ROBOT_ELEVENLABS_API_KEY (note the env prefix).
     elevenlabs_api_key: str | None = None
     elevenlabs_stt_url: str = "https://api.elevenlabs.io/v1/speech-to-text"
-    elevenlabs_stt_model: str = "scribe_v1"
+    # keyterms biasing requires scribe_v2; scribe_v1 rejects the parameter outright.
+    elevenlabs_stt_model: str = "scribe_v2"
     elevenlabs_timeout_s: float = 30.0
     max_audio_bytes: int = 10 * 1024 * 1024
+
+    # ISO-639-3. Left to auto-detect, Scribe transcribes an English "hello" as
+    # Hindi "हैलो" often enough to matter, and the grammar is English-only.
+    elevenlabs_language_code: str | None = "eng"
+    # Provider default is True, which yields transcripts like
+    # "(people talking in the background)" that the matcher then scores as speech.
+    elevenlabs_tag_audio_events: bool = False
+    elevenlabs_keyterms_enabled: bool = True
 
     model_config = SettingsConfigDict(env_prefix="ROBOT_", env_file=".env")
 

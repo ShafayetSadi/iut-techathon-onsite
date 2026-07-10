@@ -119,6 +119,48 @@ Two browser constraints worth knowing:
 `VoiceControls` deliberately does **not** use `useContinuousJog` — that dispatcher exists for held-down
 input and keeps a shared in-flight gate. A spoken command is a discrete one-shot.
 
+### What a held button must guarantee
+
+Four rules in `useSpeechCapture`, each closing a failure seen in a live session:
+
+- **`recorder.start(TIMESLICE_MS)`.** Without a timeslice, a fast release yields one blob holding a
+  container header and no audio cluster. It is non-empty, so it uploads, and the provider rejects it as
+  a corrupted file.
+- **A minimum hold of 350 ms and 1 KB.** Clips below either are dropped before the network, with
+  *"Hold the button while you speak."* The provider's own floor is 100 ms, and its rejection
+  (`audio_too_short`) tells the operator nothing actionable.
+- **`wantsRecordingRef`, not the `recording` state.** `recording` is set *after* `await getUserMedia`
+  resolves. Release during the permission prompt and a state-guarded `stop()` sees `false`, skips the
+  recorder, and **leaves the microphone live indefinitely.**
+- **Pointer capture, and no `onPointerLeave`.** The label grows to "Listening… release to send" the
+  instant recording starts; the reflow can slide the button out from under a stationary cursor and fire
+  a spurious leave.
+
+Noise handling is opt-in: `getUserMedia({ audio: true })` disables echo cancellation, noise suppression,
+and auto gain. Pass the constraint object.
+
+### What the provider must be told
+
+Two defaults are wrong for this application, and are overridden in `Settings`:
+
+- **`language_code="eng"`.** Auto-detect transcribed an English "hello" as Hindi `हैलो`, which
+  `normalize()` then strips to the empty string.
+- **`tag_audio_events=false`.** The default is `true`, producing transcripts like
+  `(people talking in the background)`. `normalize()` strips audio-event tags as well — belt and
+  braces, since the tag's *words* survive punctuation stripping and would otherwise be scored as speech.
+
+`keyterms` (see `backend/app/voice/keyterms.py`) biases recognition toward words that lose to a more
+probable English phrase. The one that matters is **`forearm` → "four arm"**, because `expandNumberWords`
+then turns "four" into `4` and the utterance reaches the matcher as `rotate {n} arm {n} degrees`. It
+does not degrade; it disintegrates. `normalize()` repairs that phrase independently, because keyterms
+are a hint and not a guarantee.
+
+**`keyterms` requires `scribe_v2`.** Verified against the live API: `scribe_v1` answers with
+*"The 'keyterms' parameter is only supported with the 'scribe_v2' model."* That is why the default model
+is now `scribe_v2`, and why `_keyterms_supported()` checks the model before sending — otherwise every
+utterance would pay a rejected request plus a retry. `transcribe()` keeps a one-shot fallback for a model
+that starts refusing the parameter, but on the default path it never fires.
+
 ## §4 State
 
 `voiceStore` is separate from `motionStore`, following the rule `viewerStore` states: `motionStore`

@@ -46,18 +46,29 @@ export default function VoiceControls() {
 
   const { start, stop, recording, error } = useSpeechCapture(handleClip);
 
-  const press = useCallback(() => {
-    setRecording(true);
-    useMotionStore.getState().setMode('voice');
-    void start();
-  }, [setRecording, start]);
+  const press = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      // The label grows to "Listening… release to send" the moment recording
+      // starts, and the reflow can slide the button out from under a stationary
+      // cursor — firing pointerleave and cutting the clip short. Capture pins
+      // every subsequent pointer event to this button instead.
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      setRecording(true);
+      useMotionStore.getState().setMode('voice');
+      void start();
+    },
+    [setRecording, start],
+  );
 
+  // Idempotent, and deliberately does not read `recording`: that state is set
+  // after `getUserMedia` resolves, so a release during the permission prompt
+  // would see `false` and never stop the recorder. `useSpeechCapture` owns the
+  // real answer in a ref.
   const release = useCallback(() => {
-    if (!recording) return;
     stop();
     setRecording(false);
     useMotionStore.getState().setMode('idle');
-  }, [recording, stop, setRecording]);
+  }, [stop, setRecording]);
 
   return (
     <div className="voice">
@@ -66,7 +77,6 @@ export default function VoiceControls() {
         type="button"
         onPointerDown={press}
         onPointerUp={release}
-        onPointerLeave={release}
         onPointerCancel={release}
       >
         {recording ? 'Listening… release to send' : 'Hold to speak'}
