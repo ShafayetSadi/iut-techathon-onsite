@@ -137,6 +137,14 @@ function errorCodeFromReason(reason: string | undefined): MotionResult['error'] 
   return 'unreachable';
 }
 
+export function tipDistanceMm(a: Vec3, b: Vec3): number {
+  return Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z) * 1000;
+}
+
+export function jogSuccessLog(actualMm: number | null): string {
+  return `Jogged ${actualMm == null ? 'n/a' : actualMm.toFixed(1)} mm.`;
+}
+
 export const useMotionStore = create<MotionState>((set, get) => ({
   jointAngles: new Array(NUM_JOINTS).fill(0),
   jointLimits: JOINT_LIMITS,
@@ -201,10 +209,11 @@ export const useMotionStore = create<MotionState>((set, get) => ({
         return await get().applyIkResponse(commandId, response, 'IK target reached.');
       }
       case 'jog_cartesian': {
+        const before = { ...get().eePosition };
         set({ mode: 'jog', status: 'moving' });
         const response = await jogCartesian(cmd.delta, get().jointAngles);
-        const mag = Math.hypot(cmd.delta.x, cmd.delta.y, cmd.delta.z) * 1000;
-        return await get().applyIkResponse(commandId, response, `Jogged ${mag.toFixed(1)} mm.`, {
+        const actualMm = response.tip ? tipDistanceMm(before, response.tip) : null;
+        return await get().applyIkResponse(commandId, response, jogSuccessLog(actualMm), {
           animateTrajectory: cmd.continuous !== true,
         });
       }

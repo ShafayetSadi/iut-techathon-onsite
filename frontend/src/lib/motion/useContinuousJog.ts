@@ -25,15 +25,16 @@ import type { Vec3 } from "./commands";
 
 /** Tick rate for continuous jog dispatch. */
 export const JOG_TICK_MS = 80;
-/** Max jog speed at full stick/key deflection, mm/s. */
-export const MAX_JOG_MM_S = 180;
-/** Per-tick delta at full deflection, meters. */
-export const MAX_JOG_DELTA_M = (MAX_JOG_MM_S / 1000) * (JOG_TICK_MS / 1000);
+/** Fixed cartesian step per normal continuous-jog tick, meters. */
+export const JOG_STEP_M = 0.005;
+/** Fixed cartesian step per fine continuous-jog tick, meters. */
+export const FINE_JOG_STEP_M = 0.0015;
 
 const EPSILON = 1e-3;
 const ZERO: Vec3 = { x: 0, y: 0, z: 0 };
 
 let currentVector: Vec3 = ZERO;
+let currentFine = false;
 let inFlight = false;
 let intervalId: ReturnType<typeof setInterval> | null = null;
 let subscribers = 0;
@@ -45,6 +46,14 @@ function vectorMagnitude(v: Vec3): number {
 
 function hasInput(v: Vec3): boolean {
   return vectorMagnitude(v) >= EPSILON;
+}
+
+export function continuousJogDelta(unit: Vec3, fine = false): Vec3 | null {
+  const mag = vectorMagnitude(unit);
+  if (mag < EPSILON) return null;
+  const step = fine ? FINE_JOG_STEP_M : JOG_STEP_M;
+  const scale = step / mag;
+  return { x: unit.x * scale, y: unit.y * scale, z: unit.z * scale };
 }
 
 function isAutonomousPinRunning(): boolean {
@@ -65,12 +74,14 @@ function endGestureIfIdle() {
   useMotionStore.getState().endContinuousJog();
 }
 
-function updateVector(unit: Vec3) {
+function updateVector(unit: Vec3, fine = false) {
   if (isAutonomousPinRunning()) {
     currentVector = ZERO;
+    currentFine = false;
     return;
   }
   currentVector = unit;
+  currentFine = fine;
   if (hasInput(unit)) {
     beginGesture();
   } else {
@@ -84,14 +95,10 @@ function tick() {
     currentVector = ZERO;
     return;
   }
-  const v = currentVector;
-  const mag = vectorMagnitude(v);
-  if (mag < EPSILON) return;
+  const delta = continuousJogDelta(currentVector, currentFine);
+  if (!delta) return;
 
   beginGesture();
-  const clamped = Math.min(1, mag);
-  const scale = (clamped / mag) * MAX_JOG_DELTA_M;
-  const delta: Vec3 = { x: v.x * scale, y: v.y * scale, z: v.z * scale };
 
   inFlight = true;
   void useMotionStore
@@ -125,8 +132,8 @@ function releaseTicker() {
 }
 
 export interface ContinuousJogController {
-  /** Components in [-1, 1]; magnitude above 1 is clamped to full speed. */
-  setVector: (unit: Vec3) => void;
+  /** Direction vector; magnitude does not affect normal/fine fixed step size. */
+  setVector: (unit: Vec3, options?: { fine?: boolean }) => void;
 }
 
 export function useContinuousJog(): ContinuousJogController {
@@ -135,8 +142,8 @@ export function useContinuousJog(): ContinuousJogController {
     return () => releaseTicker();
   }, []);
 
-  const setVector = useCallback((unit: Vec3) => {
-    updateVector(unit);
+  const setVector = useCallback((unit: Vec3, options?: { fine?: boolean }) => {
+    updateVector(unit, options?.fine === true);
   }, []);
 
   return useMemo(() => ({ setVector }), [setVector]);

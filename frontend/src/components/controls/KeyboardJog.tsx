@@ -24,8 +24,6 @@ const AXIS_KEYS: Record<string, { axis: 'x' | 'y' | 'z'; sign: 1 | -1 }> = {
   PageDown: { axis: 'z', sign: -1 },
 };
 
-const FINE_SCALE = 0.3; // Shift held = finer step
-
 function isTypingTarget(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
   const tag = element?.tagName;
@@ -54,8 +52,7 @@ export default function KeyboardJog() {
         setVector({ x: 0, y: 0, z: 0 });
         return;
       }
-      const scale = fine.current ? FINE_SCALE : 1;
-      setVector({ x: (x / mag) * scale, y: (y / mag) * scale, z: (z / mag) * scale });
+      setVector({ x: x / mag, y: y / mag, z: z / mag }, { fine: fine.current });
     };
 
     const onKeyDown = (e: KeyboardEvent) => {

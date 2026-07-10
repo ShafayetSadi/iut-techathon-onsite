@@ -45,27 +45,26 @@ export default function Joystick() {
 
     let dx = clientX - cx;
     let dy = clientY - cy;
-    const dist = Math.hypot(dx, dy);
-    if (dist > MAX_OFFSET) {
-      dx = (dx / dist) * MAX_OFFSET;
-      dy = (dy / dist) * MAX_OFFSET;
+    const rawDist = Math.hypot(dx, dy);
+    if (rawDist > MAX_OFFSET) {
+      dx = (dx / rawDist) * MAX_OFFSET;
+      dy = (dy / rawDist) * MAX_OFFSET;
     }
     setKnobPos({ x: dx, y: dy });
 
-    const norm = Math.min(1, dist / MAX_OFFSET);
+    const dist = Math.hypot(dx, dy);
+    const norm = dist / MAX_OFFSET;
     if (norm < DEADZONE || dist === 0) {
       xy.current = { x: 0, y: 0, z: 0 };
       publish();
       return;
     }
 
-    // Rescale so the deadzone edge maps to 0 and full deflection maps to 1.
-    const eased = (norm - DEADZONE) / (1 - DEADZONE);
     const ux = dx / dist;
     const uy = dy / dist;
     // Screen-down is +pixels, but "stick up" should jog +Y in the world/base
     // frame the scene renders in — hence the sign flip on Y only.
-    xy.current = { x: ux * eased, y: -uy * eased, z: 0 };
+    xy.current = { x: ux, y: -uy, z: 0 };
     publish();
   };
 
