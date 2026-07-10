@@ -23,29 +23,42 @@ export default function CommandInspector() {
 
   const activeStep = pinProgress.find((step) => step.status === 'moving');
   const completedSteps = pinProgress.filter((step) => step.status === 'pressed').length;
+  const showLatestVoice = mode === 'idle' && latestVoice;
 
   let command = '—';
   let safety = '—';
   let detail = '—';
+  let source = SOURCE_LABEL[mode] ?? mode.toUpperCase();
+  let commandStatus = status.toUpperCase();
 
   if (mode === 'auto' && activePin) {
     command = activeStep ? `PRESS KEY ${activeStep.digit}` : `RUN PIN ${activePin}`;
     detail = `Step ${completedSteps} / 6`;
     safety = autoError ? `BLOCKED · ${autoError}` : 'VALIDATED';
-  } else if (mode === 'voice' && latestVoice) {
+  } else if ((mode === 'voice' || showLatestVoice) && latestVoice) {
+    source = mode === 'voice' ? 'VOICE' : 'LAST VOICE';
     command = latestVoice.text;
     if (latestVoice.status === 'pending') {
       safety = 'PENDING';
       detail = recording ? 'Listening…' : 'Transcribing…';
+      commandStatus = 'PENDING';
     } else if (latestVoice.status === 'error') {
       safety = 'FAILED';
       detail = latestVoice.text;
+      commandStatus = 'FAILED';
     } else if (latestVoice.resolution?.status === 'matched' && latestVoice.resolution.command) {
       detail = describeCommand(latestVoice.resolution.command);
       safety = latestVoice.resolution.gate?.ok ? 'PASSED' : `BLOCKED · ${latestVoice.resolution.gate?.reason}`;
+      if (latestVoice.result) {
+        commandStatus = latestVoice.result.ok ? 'EXECUTED' : 'REJECTED';
+      } else if (latestVoice.skipped) {
+        commandStatus = 'SKIPPED';
+        safety = `BLOCKED · ${latestVoice.skipped}`;
+      }
     } else if (latestVoice.resolution) {
       detail = latestVoice.resolution.reason ?? latestVoice.resolution.status;
       safety = 'BLOCKED';
+      commandStatus = 'REJECTED';
     }
   } else if (continuousJogActive || mode === 'jog') {
     command = 'JOG CARTESIAN';
@@ -59,7 +72,7 @@ export default function CommandInspector() {
       <dl className="cmd-inspector__grid">
         <div className="cmd-inspector__row">
           <dt>Source</dt>
-          <dd>{SOURCE_LABEL[mode] ?? mode.toUpperCase()}</dd>
+          <dd>{source}</dd>
         </div>
         <div className="cmd-inspector__row">
           <dt>Input</dt>
@@ -85,7 +98,7 @@ export default function CommandInspector() {
         </div>
         <div className="cmd-inspector__row">
           <dt>Status</dt>
-          <dd>{status.toUpperCase()}</dd>
+          <dd>{commandStatus}</dd>
         </div>
       </dl>
     </div>

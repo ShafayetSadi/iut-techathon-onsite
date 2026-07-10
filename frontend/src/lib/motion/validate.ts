@@ -16,12 +16,14 @@ import {
 import type { MotionCommand, ValidationResult, Vec3 } from './commands';
 
 const OK: ValidationResult = { ok: true };
+/** Above the 250 mm XYZ button nudge, below clearly unsafe spoken one-shot moves. */
+export const MAX_JOG_STEP_M = 0.30;
 
 function reject(error: Exclude<ValidationResult, { ok: true }>['error'], reason: string): ValidationResult {
   return { ok: false, error, reason };
 }
 
-function withinJointLimit(joint: number, value: number): ValidationResult {
+export function withinJointLimit(joint: number, value: number): ValidationResult {
   if (!Number.isInteger(joint) || joint < 0 || joint >= NUM_JOINTS) {
     return reject('malformed', `Joint index ${joint} is out of range (0..${NUM_JOINTS - 1}).`);
   }
@@ -38,7 +40,7 @@ function withinJointLimit(joint: number, value: number): ValidationResult {
   return OK;
 }
 
-function withinWorkspace(p: Vec3): ValidationResult {
+export function withinWorkspace(p: Vec3): ValidationResult {
   if (![p.x, p.y, p.z].every(Number.isFinite)) {
     return reject('malformed', 'Target contains a non-finite coordinate.');
   }
@@ -68,7 +70,7 @@ export function validateCommand(cmd: MotionCommand): ValidationResult {
       if (!Number.isFinite(cmd.delta)) {
         return reject('malformed', 'Jog delta is not a finite number.');
       }
-      return OK; // absolute limit is enforced when the delta is applied
+      return OK; // absolute limit needs the current pose and is checked in dispatch
 
     case 'move_to':
       return withinWorkspace(cmd.target);
@@ -76,6 +78,15 @@ export function validateCommand(cmd: MotionCommand): ValidationResult {
     case 'jog_cartesian':
       if (![cmd.delta.x, cmd.delta.y, cmd.delta.z].every(Number.isFinite)) {
         return reject('malformed', 'Jog delta contains a non-finite coordinate.');
+      }
+      {
+        const mag = Math.hypot(cmd.delta.x, cmd.delta.y, cmd.delta.z);
+        if (mag > MAX_JOG_STEP_M) {
+          return reject(
+            'workspace_bounds',
+            `Jog of ${(mag * 1000).toFixed(0)} mm exceeds the ${(MAX_JOG_STEP_M * 1000).toFixed(0)} mm single-command limit.`,
+          );
+        }
       }
       return OK;
 

@@ -65,7 +65,15 @@ export function matchTranscript(raw: string, templates: Template[] = TEMPLATES):
   const normalized = normalize(raw);
 
   if (!normalized) {
-    return { status: 'unmatched', normalized, reason: 'Nothing was said.' };
+    // `normalize` keeps only [a-z0-9], so a transcript that survives speech-to-text
+    // but empties out here was almost certainly recognized as another language.
+    return {
+      status: 'unmatched',
+      normalized,
+      reason: raw.trim()
+        ? 'Nothing recognizable was said — is the mic picking up English?'
+        : 'Nothing was said.',
+    };
   }
 
   if (isStop(normalized)) {

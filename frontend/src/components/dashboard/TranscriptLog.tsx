@@ -43,6 +43,16 @@ function Detail({ entry }: { entry: TranscriptEntry }) {
         <span className={`transcript__gate transcript__gate--${gate?.ok ? 'ok' : 'blocked'}`}>
           {gate?.ok ? 'gate ok' : `gate blocked · ${gate?.reason}`}
         </span>
+        {entry.result && (
+          <span className={`transcript__gate transcript__gate--${entry.result.ok ? 'ok' : 'blocked'}`}>
+            {entry.result.ok ? 'executed' : `rejected · ${entry.result.reason ?? entry.result.error}`}
+          </span>
+        )}
+        {entry.skipped && (
+          <span className="transcript__gate transcript__gate--blocked">
+            skipped · {entry.skipped}
+          </span>
+        )}
       </div>
     );
   }

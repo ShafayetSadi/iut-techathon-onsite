@@ -1,5 +1,40 @@
-import { describe, expect, it } from 'vitest';
-import { jogResponseLog, jogSuccessLog, tipDistanceMm } from './store';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { NUM_JOINTS } from '@/config/robot.config';
+import { jogResponseLog, jogSuccessLog, registerJogCanceller, tipDistanceMm, useMotionStore } from './store';
+import * as backend from './backendApi';
+
+vi.mock('./backendApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./backendApi')>();
+  return {
+    ...actual,
+    jogCartesian: vi.fn(),
+    solveIk: vi.fn(),
+    getPanelKeyPosition: vi.fn(),
+    runPinSequence: vi.fn(),
+  };
+});
+
+function resetStore() {
+  useMotionStore.setState({
+    jointAngles: new Array(NUM_JOINTS).fill(0),
+    eePosition: { x: 0, y: 0, z: 0 },
+    target: null,
+    mode: 'idle',
+    status: 'ready',
+    log: [],
+    robotReady: true,
+    continuousJogActive: false,
+    stopEpoch: 0,
+    activePin: null,
+    pinProgress: [],
+    pinSteps: [],
+    autoError: null,
+    autoRunId: 0,
+    ignoreLimits: false,
+  });
+  registerJogCanceller(null);
+  vi.clearAllMocks();
+}
 
 describe('jog movement log helpers', () => {
   it('measures actual tip displacement in millimeters', () => {
@@ -22,5 +57,92 @@ describe('jog movement log helpers', () => {
     expect(jogResponseLog({ reason: 'Jog blocked: requested direction is outside reach.' }, 0)).toBe(
       'Jog blocked: requested direction is outside reach.',
     );
+  });
+});
+
+describe('motion store safety dispatch', () => {
+  beforeEach(() => {
+    resetStore();
+  });
+
+  it('rejects predicted workspace exits without calling the jog backend', async () => {
+    useMotionStore.setState({ eePosition: { x: 1.65, y: 0, z: 0 } });
+
+    const result = await useMotionStore.getState().dispatch({
+      type: 'jog_cartesian',
+      delta: { x: 0.1, y: 0, z: 0 },
+      frame: 'world',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('workspace_bounds');
+    expect(backend.jogCartesian).not.toHaveBeenCalled();
+  });
+
+  it('rejects joint jogs that would exceed URDF limits instead of clamping', async () => {
+    const result = await useMotionStore.getState().dispatch({
+      type: 'jog_joint',
+      joint: 1,
+      delta: 200 * (Math.PI / 180),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('joint_limit');
+    expect(useMotionStore.getState().jointAngles[1]).toBe(0);
+  });
+
+  it('runs the registered continuous-jog canceller on stop', async () => {
+    const cancel = vi.fn();
+    registerJogCanceller(cancel);
+    useMotionStore.setState({ continuousJogActive: true, mode: 'jog', status: 'moving' });
+
+    const result = await useMotionStore.getState().dispatch({ type: 'stop' });
+
+    expect(result.ok).toBe(true);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(useMotionStore.getState()).toMatchObject({
+      continuousJogActive: false,
+      mode: 'idle',
+      status: 'ready',
+      stopEpoch: 1,
+      autoRunId: 1,
+    });
+  });
+
+  it('does not write final IK joints after stop changes the epoch', async () => {
+    vi.useFakeTimers();
+    try {
+      const state = useMotionStore.getState();
+      const epoch = state.stopEpoch;
+      const motion = state.applyIkResponse('cmd-test', {
+        success: true,
+        trajectory: [
+          {
+            timeMs: 0,
+            joints: { joint_1: 0.25 },
+            tip: { x: 0, y: 0, z: 0 },
+          },
+          {
+            timeMs: 20,
+            joints: { joint_1: 0.5 },
+            tip: { x: 0, y: 0, z: 0 },
+          },
+        ],
+        joints: { joint_1: 1 },
+        tip: { x: 0.1, y: 0, z: 0 },
+      }, 'IK target reached.', epoch);
+
+      await Promise.resolve();
+      expect(useMotionStore.getState().jointAngles[0]).toBe(0.25);
+
+      await useMotionStore.getState().dispatch({ type: 'stop' });
+      await vi.advanceTimersByTimeAsync(20);
+      const result = await motion;
+
+      expect(result).toMatchObject({ ok: false, error: 'cancelled' });
+      expect(useMotionStore.getState().jointAngles[0]).toBe(0.25);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
