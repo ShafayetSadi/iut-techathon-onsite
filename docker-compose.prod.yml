@@ -1,0 +1,47 @@
+name: iut-techathon-onsite
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_BACKEND_URL=http://137.184.201.76:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: iut-techathon-robot-backend
+    ports:
+      - "8000:8000"
+    environment:
+      ROBOT_URDF_PATH: /app/6_dof_arm.urdf
+      ROBOT_PANEL_CONFIG_PATH: /app/key.config.json
+      ROBOT_IK_TOLERANCE_M: "0.002"
+    env_file:
+      - backend/.env
+    volumes:
+      - ./backend/app:/app/backend/app:ro
+      - ./6_dof_arm.urdf:/app/6_dof_arm.urdf:ro
+      - ./key.config.json:/app/key.config.json:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          ".venv/bin/python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped

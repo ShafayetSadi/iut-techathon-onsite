@@ -184,6 +184,23 @@ def test_motion_planner_jog_up_near_base_axis_below_top() -> None:
     assert response.reason is None
 
 
+def test_motion_planner_jog_up_at_reachable_top_fails_without_ik_wait() -> None:
+    planner = get_motion_planner()
+    current_values = [0.0, 0.099, -0.171, 0.0, 0.076, 0.0, -0.014]
+    current = dict(zip(planner.model.controlled_joint_names, current_values, strict=True))
+    before = forward_kinematics(planner.model, current).tip
+
+    response = planner.jog(current, Vector3(x=0.0, y=0.0, z=0.01))
+
+    assert response.success is False
+    assert response.joints is None
+    assert response.iterations == 0
+    assert response.error_meters == 0.01
+    assert response.reason == "Jog blocked: already at top of reachable workspace."
+    assert response.tip is not None
+    assert abs(response.tip["z"] - before[2]) <= 1e-9
+
+
 def test_motion_planner_jog_accepts_useful_near_miss_at_tolerance_edge() -> None:
     planner = get_motion_planner()
     angles_deg = [-0.6, -23.6, -0.3, -37.7, 0.1, -2.8, 0.0]

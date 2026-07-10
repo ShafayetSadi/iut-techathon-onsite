@@ -11,6 +11,10 @@ const SOURCE_LABEL: Record<string, string> = {
   auto: 'AUTO PIN',
 };
 
+function compactDashboardText(text: string): string {
+  return text.length > 76 ? `${text.slice(0, 73)}...` : text;
+}
+
 export default function CommandInspector() {
   const mode = useMotionStore((s) => s.mode);
   const status = useMotionStore((s) => s.status);
@@ -28,10 +32,7 @@ export default function CommandInspector() {
   const activeStep = pinProgress.find((step) => step.status === 'moving');
   const completedSteps = pinProgress.filter((step) => step.status === 'pressed').length;
   const showLatestVoice = mode === 'idle' && latestVoice;
-  const latestError =
-    status === 'error'
-      ? [...log].reverse().find((entry) => entry.level === 'error')
-      : null;
+  const latestError = status === 'error' ? [...log].reverse().find((entry) => entry.level === 'error') : null;
 
   let command = lastCommand ?? '—';
   let safety = '—';
@@ -115,9 +116,9 @@ export default function CommandInspector() {
     command = 'JOG CARTESIAN';
     detailLabel = 'Mode';
     detail = 'Continuous world-frame jog';
-    safety = latestError ? `BLOCKED · ${latestError.text}` : 'VALIDATED';
+    safety = lastError ? `BLOCKED · ${compactDashboardText(lastError)}` : latestError ? 'BLOCKED' : 'VALIDATED';
   } else if (safetySummary) {
-    safety = safetySummary;
+    safety = compactDashboardText(safetySummary);
   }
 
   return (
@@ -140,19 +141,30 @@ export default function CommandInspector() {
           <dt>Safety</dt>
           <dd
             className={
-              safety.startsWith('PASSED') || safety === 'VALIDATED'
-                ? 'cmd-inspector__ok'
-                : safety.startsWith('BLOCKED') || safety === 'FAILED'
-                  ? 'cmd-inspector__err'
-                  : undefined
+              `cmd-inspector__safety ${
+                safety.startsWith('PASSED') || safety === 'VALIDATED'
+                  ? 'cmd-inspector__ok'
+                  : safety.startsWith('BLOCKED') || safety === 'FAILED'
+                    ? 'cmd-inspector__err'
+                    : ''
+              }`
             }
+            title={safety}
           >
             {safety}
           </dd>
         </div>
         <div className="cmd-inspector__row">
           <dt>Status</dt>
-          <dd>{commandStatus}</dd>
+          <dd
+            className={
+              commandStatus === 'ERROR' || commandStatus === 'FAILED' || commandStatus === 'REJECTED'
+                ? 'cmd-inspector__err'
+                : undefined
+            }
+          >
+            {commandStatus}
+          </dd>
         </div>
       </dl>
     </div>
