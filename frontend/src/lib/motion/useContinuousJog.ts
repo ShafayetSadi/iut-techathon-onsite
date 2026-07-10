@@ -21,7 +21,7 @@
 
 import { useCallback, useEffect, useMemo } from "react";
 import { useMotionStore } from "./store";
-import { jogStepScale, useViewerStore } from "../viewer/viewerStore";
+import { jogStepMeters, useViewerStore } from "../viewer/viewerStore";
 import type { Vec3 } from "./commands";
 
 /** Tick rate for continuous jog dispatch. */
@@ -40,6 +40,7 @@ let inFlight = false;
 let intervalId: ReturnType<typeof setInterval> | null = null;
 let subscribers = 0;
 let gestureActive = false;
+let currentStepMeters = JOG_STEP_M;
 
 function vectorMagnitude(v: Vec3): number {
   return Math.hypot(v.x, v.y, v.z);
@@ -49,11 +50,10 @@ function hasInput(v: Vec3): boolean {
   return vectorMagnitude(v) >= EPSILON;
 }
 
-export function continuousJogDelta(unit: Vec3, fine = false): Vec3 | null {
+export function continuousJogDelta(unit: Vec3, stepMeters = JOG_STEP_M): Vec3 | null {
   const mag = vectorMagnitude(unit);
   if (mag < EPSILON) return null;
-  const step = fine ? FINE_JOG_STEP_M : JOG_STEP_M;
-  const scale = step / mag;
+  const scale = stepMeters / mag;
   return { x: unit.x * scale, y: unit.y * scale, z: unit.z * scale };
 }
 
@@ -96,7 +96,8 @@ function tick() {
     currentVector = ZERO;
     return;
   }
-  const delta = continuousJogDelta(currentVector, currentFine);
+  const stepM = currentFine ? Math.min(currentStepMeters, FINE_JOG_STEP_M) : currentStepMeters;
+  const delta = continuousJogDelta(currentVector, stepM);
   if (!delta) return;
 
   beginGesture();
@@ -109,6 +110,7 @@ function tick() {
       delta,
       frame: "world",
       continuous: true,
+      requestedStepMm: stepM * 1000,
     })
     .finally(() => {
       inFlight = false;
@@ -138,6 +140,12 @@ export interface ContinuousJogController {
 }
 
 export function useContinuousJog(): ContinuousJogController {
+  const jogStepMm = useViewerStore((state) => state.jogStepMm);
+
+  useEffect(() => {
+    currentStepMeters = jogStepMeters(jogStepMm);
+  }, [jogStepMm]);
+
   useEffect(() => {
     acquireTicker();
     return () => releaseTicker();

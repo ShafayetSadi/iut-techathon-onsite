@@ -20,6 +20,10 @@ export function jogStepScale(mm: JogStepMm): number {
   return JOG_STEP_SCALE[mm];
 }
 
+export function jogStepMeters(mm: JogStepMm): number {
+  return mm / 1000;
+}
+
 export interface ViewerState {
   showCollision: boolean;
   useDegrees: boolean;

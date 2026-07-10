@@ -14,6 +14,10 @@ describe('jog movement log helpers', () => {
     expect(jogSuccessLog(4.8)).toBe('Jogged 4.8 mm.');
   });
 
+  it('includes the requested step size when provided', () => {
+    expect(jogSuccessLog(9.9, 10)).toBe('Jogged 9.9 mm / requested 10 mm.');
+  });
+
   it('does not invent movement when the backend omits a tip', () => {
     expect(jogSuccessLog(null)).toBe('Jogged n/a mm.');
   });

@@ -141,12 +141,17 @@ export function tipDistanceMm(a: Vec3, b: Vec3): number {
   return Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z) * 1000;
 }
 
-export function jogSuccessLog(actualMm: number | null): string {
-  return `Jogged ${actualMm == null ? 'n/a' : actualMm.toFixed(1)} mm.`;
+export function jogSuccessLog(actualMm: number | null, requestedMm?: number): string {
+  const requested = requestedMm == null ? '' : ` / requested ${requestedMm.toFixed(0)} mm`;
+  return `Jogged ${actualMm == null ? 'n/a' : actualMm.toFixed(1)} mm${requested}.`;
 }
 
-export function jogResponseLog(response: Pick<IkResponse, 'reason'>, actualMm: number | null): string {
-  return response.reason ?? jogSuccessLog(actualMm);
+export function jogResponseLog(
+  response: Pick<IkResponse, 'reason'>,
+  actualMm: number | null,
+  requestedMm?: number,
+): string {
+  return response.reason ?? jogSuccessLog(actualMm, requestedMm);
 }
 
 export const useMotionStore = create<MotionState>((set, get) => ({
@@ -217,7 +222,8 @@ export const useMotionStore = create<MotionState>((set, get) => ({
         set({ mode: 'jog', status: 'moving' });
         const response = await jogCartesian(cmd.delta, get().jointAngles);
         const actualMm = response.tip ? tipDistanceMm(before, response.tip) : null;
-        const successLog = jogResponseLog(response, actualMm);
+        const requestedMm = cmd.requestedStepMm ?? tipDistanceMm({ x: 0, y: 0, z: 0 }, cmd.delta);
+        const successLog = jogResponseLog(response, actualMm, requestedMm);
         return await get().applyIkResponse(commandId, response, successLog, {
           animateTrajectory: cmd.continuous !== true,
         });

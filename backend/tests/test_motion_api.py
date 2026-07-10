@@ -132,6 +132,25 @@ def test_motion_planner_jog_moves_for_continuous_tick_sized_delta() -> None:
     assert response.tip["x"] > before.tip["x"] + 0.003
 
 
+def test_motion_planner_jog_moves_for_one_millimeter_step() -> None:
+    planner = get_motion_planner()
+    current = planner.model.neutral_pose()
+    before = planner.solve_target(Vector3(x=0.0, y=0.0, z=1.497), current)
+    assert before.success
+    assert before.joints is not None
+    assert before.tip is not None
+
+    delta = Vector3(x=0.001, y=0.0, z=0.0)
+    response = planner.jog(before.joints, delta)
+
+    assert response.success, response.reason
+    assert response.tip is not None
+    moved_m = response.tip["x"] - before.tip["x"]
+    assert moved_m >= 0.0005
+    assert response.error_meters is not None
+    assert response.error_meters <= 0.0005
+
+
 def test_motion_planner_jog_accepts_useful_near_miss_at_tolerance_edge() -> None:
     planner = get_motion_planner()
     angles_deg = [-0.6, -23.6, -0.3, -37.7, 0.1, -2.8, 0.0]

@@ -12,7 +12,7 @@ export type Vec3 = { x: number; y: number; z: number };
 
 /** The ONE thing all five triggers produce. */
 export type MotionCommand =
-  | { type: 'jog_cartesian'; delta: Vec3; frame?: 'world' | 'tool'; continuous?: boolean }
+  | { type: 'jog_cartesian'; delta: Vec3; frame?: 'world' | 'tool'; continuous?: boolean; requestedStepMm?: number }
   | { type: 'move_to'; target: Vec3; approach?: Vec3 } // IK targeting + PIN
   | { type: 'set_joint'; joint: number; value: number } // absolute radians
   | { type: 'jog_joint'; joint: number; delta: number } // e.g. "rotate base 30°"

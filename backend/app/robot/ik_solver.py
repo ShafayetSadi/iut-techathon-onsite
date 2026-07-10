@@ -55,29 +55,43 @@ class IKSolver:
             reason=f"IK did not converge within {self.tolerance_m:.3f}m tolerance",
         )
 
-    def solve_local(self, target: np.ndarray, current_joints: dict[str, float]) -> IKResult:
-        result = self._solve_from_seed(target, current_joints)
+    def solve_local(
+        self,
+        target: np.ndarray,
+        current_joints: dict[str, float],
+        *,
+        tolerance_m: float | None = None,
+    ) -> IKResult:
+        result = self._solve_from_seed(target, current_joints, tolerance_m=tolerance_m)
         if result.success:
             return result
+        tolerance = tolerance_m if tolerance_m is not None else self.tolerance_m
         return IKResult(
             success=False,
             joints=result.joints,
             tip=result.tip,
             error_meters=result.error_meters,
             iterations=result.iterations,
-            reason=f"IK did not converge within {self.tolerance_m:.3f}m tolerance",
+            reason=f"IK did not converge within {tolerance:.3f}m tolerance",
         )
 
-    def _solve_from_seed(self, target: np.ndarray, seed: dict[str, float]) -> IKResult:
+    def _solve_from_seed(
+        self,
+        target: np.ndarray,
+        seed: dict[str, float],
+        *,
+        tolerance_m: float | None = None,
+    ) -> IKResult:
         joints = clamp_joint_map(self.model, seed)
         names = self.model.controlled_joint_names
         limit_map = self.model.joint_limits()
+        tolerance = tolerance_m if tolerance_m is not None else self.tolerance_m
 
         for iteration in range(1, self.max_iterations + 1):
             tip = forward_kinematics(self.model, joints).tip
             error = target - tip
             error_norm = float(np.linalg.norm(error))
-            if error_norm <= self.tolerance_m:
+            if error_norm <= tolerance:
                 return IKResult(True, joints, tip, error_norm, iteration)
 
             jacobian = numerical_jacobian(self.model, joints, names)

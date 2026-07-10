@@ -47,6 +47,8 @@ class MotionPlanner:
     def jog(self, current_joints: dict[str, float], delta: Vector3) -> IKSolveResponse:
         start = clamp_joint_map(self.model, current_joints)
         current_tip = forward_kinematics(self.model, start).tip
+        requested_delta = np.array([delta.x, delta.y, delta.z], dtype=float)
+        requested_m = float(np.linalg.norm(requested_delta))
         target = Vector3(
             x=float(current_tip[0] + delta.x),
             y=float(current_tip[1] + delta.y),
@@ -55,10 +57,11 @@ class MotionPlanner:
         self.safety.validate_target(target)
 
         target_tip = np.array([target.x, target.y, target.z], dtype=float)
-        result = self.solver.solve_local(target_tip, start)
+        jog_solve_tolerance_m = max(0.0001, min(self.solver.tolerance_m, requested_m * 0.2))
+        result = self.solver.solve_local(target_tip, start, tolerance_m=jog_solve_tolerance_m)
         if result.success or self._is_acceptable_jog_near_miss(
             current_tip=current_tip,
-            requested_delta=np.array([delta.x, delta.y, delta.z], dtype=float),
+            requested_delta=requested_delta,
             result_tip=result.tip,
             error_meters=result.error_meters,
         ):
@@ -75,11 +78,10 @@ class MotionPlanner:
 
         if self._is_off_axis_jog_near_miss(
             current_tip=current_tip,
-            requested_delta=np.array([delta.x, delta.y, delta.z], dtype=float),
+            requested_delta=requested_delta,
             result_tip=result.tip,
             error_meters=result.error_meters,
         ):
-            requested_m = float(np.linalg.norm(np.array([delta.x, delta.y, delta.z], dtype=float)))
             return IKSolveResponse(
                 success=True,
                 joints=start,
