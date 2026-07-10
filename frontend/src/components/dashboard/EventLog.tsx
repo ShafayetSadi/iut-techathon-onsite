@@ -14,14 +14,17 @@ export default function EventLog() {
   const clearLog = useMotionStore((s) => s.clearLog);
   const status = useMotionStore((s) => s.status);
   const mounted = useMounted();
-  const endRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const latestError =
     status === 'error'
       ? [...log].reverse().find((entry) => entry.level === 'error')
       : null;
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: 'nearest' });
+    const body = bodyRef.current;
+    if (body) {
+      body.scrollTop = body.scrollHeight;
+    }
   }, [log]);
 
   return (
@@ -37,14 +40,13 @@ export default function EventLog() {
           {latestError.text}
         </div>
       ) : null}
-      <div className="eventlog__body">
+      <div className="eventlog__body" ref={bodyRef}>
         {log.map((e, i) => (
           <div className={`eventlog__row eventlog__row--${e.level}`} key={`${e.t}-${i}`}>
             <span className="eventlog__t">{mounted ? ts(e.t) : ''}</span>
             <span className="eventlog__text">{e.text}</span>
           </div>
         ))}
-        <div ref={endRef} />
       </div>
     </div>
   );
