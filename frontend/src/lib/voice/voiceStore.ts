@@ -27,6 +27,7 @@ export interface TranscriptEntry {
   result?: MotionResult;
   skipped?: string;
   agentResult?: AgentResponse;
+  agentPending?: boolean;
 }
 
 /** Enough history to scroll back through a demo, bounded so it cannot grow forever. */
@@ -48,6 +49,7 @@ export interface VoiceState {
   beginTranscript: () => string;
   /** Attach the recognized text and run it through the matcher. */
   resolveTranscript: (id: string, text: string) => Resolution;
+  markAgentPending: (id: string) => void;
   attachResult: (id: string, outcome: { result?: MotionResult; skipped?: string; agentResult?: AgentResponse }) => void;
   setPendingPlan: (plan: AgentPendingPlan) => void;
   getPendingPlan: () => AgentPendingPlan | undefined;
@@ -85,8 +87,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     return resolution;
   },
 
+  markAgentPending: (id) => {
+    set({ entries: replace(get().entries, id, { agentPending: true }) });
+  },
+
   attachResult: (id, outcome) => {
-    set({ entries: replace(get().entries, id, outcome) });
+    set({ entries: replace(get().entries, id, { ...outcome, agentPending: false }) });
   },
 
   setPendingPlan: (plan) => set({ pendingPlan: { plan, expiresAt: Date.now() + 120_000 } }),
