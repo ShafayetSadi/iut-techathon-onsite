@@ -17,6 +17,8 @@ describe('interpretAgent', () => {
       'move it please',
       { status: 'ambiguous', normalized: 'move', alternatives: [{ template: 'move up', confidence: 0.9 }] },
       [1, 2, 3, 4, 5, 6, 7],
+      undefined,
+      [{ role: 'user', content: 'previous request', t: 1 }],
     );
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
@@ -24,6 +26,7 @@ describe('interpretAgent', () => {
     expect(body.resolutionStatus).toBe('ambiguous');
     expect(body.currentJoints.joint_1).toBe(1);
     expect(body.alternatives[0].template).toBe('move up');
+    expect(body.chatHistory).toEqual([{ role: 'user', content: 'previous request', t: 1 }]);
   });
 
   it('surfaces backend errors', async () => {

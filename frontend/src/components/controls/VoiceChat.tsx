@@ -12,6 +12,7 @@
 import { useEffect, useRef } from 'react';
 import { useMounted } from '@/lib/hooks/useMounted';
 import { describeCommand } from '@/lib/voice/matcher';
+import { humanizeVoiceError } from '@/lib/voice/speak';
 import { useVoiceStore, type TranscriptEntry } from '@/lib/voice/voiceStore';
 
 function ts(t: number): string {
@@ -37,7 +38,9 @@ function matcherText(entry: TranscriptEntry): string {
   }
 
   if (resolution.status === 'unmatched') {
-    return resolution.reason ?? "I couldn't match that to a supported command.";
+    return resolution.reason
+      ? humanizeVoiceError(resolution.reason)
+      : "I couldn't match that to a supported command.";
   }
 
   const lines: string[] = [];
@@ -51,16 +54,16 @@ function matcherText(entry: TranscriptEntry): string {
     lines.push(
       resolution.gate.ok
         ? 'Safety check: passed'
-        : `Safety check: blocked — ${resolution.gate.reason ?? 'rejected'}`,
+        : `Safety check: ${humanizeVoiceError(resolution.gate.reason ?? 'rejected')}`,
     );
   }
   if (entry.skipped) {
-    lines.push(`Not executed: ${entry.skipped}`);
+    lines.push(humanizeVoiceError(entry.skipped));
   } else if (entry.result) {
     lines.push(
       entry.result.ok
         ? 'Status: executed successfully'
-        : `Status: rejected — ${entry.result.reason ?? entry.result.error ?? 'failed'}`,
+        : humanizeVoiceError(entry.result.reason ?? entry.result.error ?? 'failed'),
     );
   } else if (resolution.gate?.ok) {
     lines.push('Status: ready to execute');
@@ -74,7 +77,7 @@ function AssistantMessage({ entry }: { entry: TranscriptEntry }) {
     return <p className="voice-chat__text">Transcribing and parsing your command…</p>;
   }
   if (entry.status === 'error') {
-    return <p className="voice-chat__text">{entry.text}</p>;
+    return <p className="voice-chat__text">{humanizeVoiceError(entry.text)}</p>;
   }
   if (entry.agentPending) {
     return <p className="voice-chat__text">Interpreting with the agent…</p>;
@@ -86,6 +89,8 @@ function AssistantMessage({ entry }: { entry: TranscriptEntry }) {
   // safety preflight and executed still reports "I couldn't match that".
   const agent = entry.agentResult;
   if (agent) {
+    const skipped = entry.skipped && entry.skipped !== agent.failureReason ? entry.skipped : null;
+
     return (
       <>
         <p className="voice-chat__text">{agent.confirmation}</p>
@@ -104,19 +109,19 @@ function AssistantMessage({ entry }: { entry: TranscriptEntry }) {
         )}
 
         {agent.clarifyingQuestion && (
-          <p className="voice-chat__text">asking · {agent.clarifyingQuestion}</p>
+          <p className="voice-chat__text">{agent.clarifyingQuestion}</p>
         )}
         {agent.failureReason && (
-          <p className="voice-chat__text voice-chat__text--multiline">rejected · {agent.failureReason}</p>
+          <p className="voice-chat__text">{humanizeVoiceError(agent.failureReason)}</p>
         )}
         {entry.result && (
           <p className="voice-chat__text">
             {entry.result.ok
-              ? 'Status: operation completed successfully'
-              : `Status: failed · ${entry.result.reason ?? entry.result.error}`}
+              ? 'Done.'
+              : humanizeVoiceError(entry.result.reason ?? entry.result.error)}
           </p>
         )}
-        {entry.skipped && <p className="voice-chat__text">skipped · {entry.skipped}</p>}
+        {skipped && <p className="voice-chat__text">{humanizeVoiceError(skipped)}</p>}
       </>
     );
   }

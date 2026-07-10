@@ -1,4 +1,5 @@
 import asyncio
+import json
 import math
 from unittest.mock import AsyncMock
 
@@ -102,7 +103,10 @@ def test_service_uses_tools_then_returns_compiled_plan() -> None:
         ]
     )
 
-    result = asyncio.run(service.interpret(_request()))
+    result = asyncio.run(service.interpret(_request(chatHistory=[
+        {"role": "user", "content": "previously asked about key 5", "t": 1},
+        {"role": "assistant", "content": "I understood that you want me to tap key 5.", "t": 2},
+    ])))
 
     assert result.status == "ready"
     assert result.command is not None
@@ -114,6 +118,8 @@ def test_service_uses_tools_then_returns_compiled_plan() -> None:
     assert "default" not in str(schema)
     assert second_payload["provider"] == {"require_parameters": True}
     assert second_payload["messages"][-1]["role"] == "tool"
+    context = json.loads(second_payload["messages"][1]["content"])
+    assert context["chatHistory"][0]["content"] == "previously asked about key 5"
 
 
 def test_ambiguous_draft_returns_pending_plan_without_command() -> None:

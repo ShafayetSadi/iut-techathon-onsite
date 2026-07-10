@@ -17,7 +17,7 @@ import { executeVoiceCommand } from '@/lib/voice/execute';
 import { useSpeechCapture } from '@/lib/voice/useSpeechCapture';
 import { useVoiceStore } from '@/lib/voice/voiceStore';
 import { transcribeClip } from '@/lib/voice/voiceApi';
-import { describeOutcome, speak } from '@/lib/voice/speak';
+import { describeOutcome, humanizeVoiceError, speak } from '@/lib/voice/speak';
 
 const EXAMPLES = [
   'move up',
@@ -45,7 +45,8 @@ export default function VoiceControls() {
       if (pendingPlan || resolution.status === 'unmatched' || resolution.status === 'ambiguous') {
         markAgentPending(id);
       }
-      const outcome = await executeVoiceCommand(resolution, { transcript, pendingPlan });
+      const chatHistory = useVoiceStore.getState().buildAgentChatHistory();
+      const outcome = await executeVoiceCommand(resolution, { transcript, pendingPlan, chatHistory });
       attachResult(id, outcome);
 
       // The browser boundary lives here, not in `execute.ts` — that module is a
@@ -69,11 +70,13 @@ export default function VoiceControls() {
         const { transcript } = await transcribeClip(clip, filename);
         if (!transcript) {
           failTranscript(id, 'Nothing was heard.');
+          speak(humanizeVoiceError('Nothing was heard.'));
           return;
         }
         await runTranscript(id, transcript);
       } catch (err) {
         failTranscript(id, (err as Error).message);
+        speak(humanizeVoiceError((err as Error).message));
       } finally {
         const motion = useMotionStore.getState();
         motion.setMode(motion.continuousJogActive ? 'jog' : 'idle');
@@ -119,6 +122,7 @@ export default function VoiceControls() {
         await runTranscript(id, transcript);
       } catch (err) {
         failTranscript(id, (err as Error).message);
+        speak(humanizeVoiceError((err as Error).message));
       } finally {
         const motion = useMotionStore.getState();
         motion.setMode(motion.continuousJogActive ? 'jog' : 'idle');

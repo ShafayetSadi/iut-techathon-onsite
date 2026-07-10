@@ -40,11 +40,18 @@ export interface AgentResponse {
   pendingPlan?: AgentPendingPlan | null;
 }
 
+export interface AgentChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  t: number;
+}
+
 export async function interpretAgent(
   transcript: string,
   resolution: Resolution,
   jointAngles: number[],
   pendingPlan?: AgentPendingPlan,
+  chatHistory?: AgentChatMessage[],
 ): Promise<AgentResponse> {
   const res = await fetch(`${BACKEND_URL}/api/agent/interpret`, {
     method: 'POST',
@@ -55,6 +62,7 @@ export async function interpretAgent(
       alternatives: resolution.alternatives,
       currentJoints: jointArrayToMap(jointAngles),
       pendingPlan,
+      chatHistory,
     }),
   });
   const payload = (await res.json().catch(() => null)) as AgentResponse & {

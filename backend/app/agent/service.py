@@ -101,6 +101,7 @@ class AgentService:
             "deterministicAlternatives": [item.model_dump() for item in request.alternatives or []],
             "currentJoints": request.current_joints,
             "pendingPlan": request.pending_plan.model_dump(by_alias=True) if request.pending_plan else None,
+            "chatHistory": [item.model_dump() for item in request.chat_history],
         }
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": self.system_prompt},

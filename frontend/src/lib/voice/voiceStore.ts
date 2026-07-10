@@ -12,8 +12,8 @@
 
 import { create } from 'zustand';
 import type { MotionCommand, MotionResult } from '@/lib/motion/commands';
-import { matchTranscript, type Resolution } from './matcher';
-import type { AgentPendingPlan, AgentResponse } from './agentApi';
+import { describeCommand, matchTranscript, type Resolution } from './matcher';
+import type { AgentChatMessage, AgentPendingPlan, AgentResponse } from './agentApi';
 
 export type TranscriptStatus = 'pending' | 'final' | 'error';
 
@@ -32,6 +32,7 @@ export interface TranscriptEntry {
 
 /** Enough history to scroll back through a demo, bounded so it cannot grow forever. */
 const MAX_TRANSCRIPTS = 100;
+const MAX_AGENT_CHAT_MESSAGES = 10;
 
 let counter = 0;
 function nextId(): string {
@@ -51,6 +52,7 @@ export interface VoiceState {
   resolveTranscript: (id: string, text: string) => Resolution;
   markAgentPending: (id: string) => void;
   attachResult: (id: string, outcome: { result?: MotionResult; skipped?: string; agentResult?: AgentResponse }) => void;
+  buildAgentChatHistory: () => AgentChatMessage[];
   setPendingPlan: (plan: AgentPendingPlan) => void;
   getPendingPlan: () => AgentPendingPlan | undefined;
   clearPendingPlan: () => void;
@@ -65,6 +67,54 @@ function replace(
   patch: Partial<TranscriptEntry>,
 ): TranscriptEntry[] {
   return entries.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry));
+}
+
+function deterministicAssistantText(entry: TranscriptEntry): string | null {
+  const resolution = entry.resolution;
+  if (!resolution) return null;
+  if (resolution.status !== 'matched' || !resolution.command) return null;
+
+  const lines = [`Parsed: ${describeCommand(resolution.command)}`];
+  if (entry.skipped) {
+    lines.push(`Not executed: ${entry.skipped}`);
+  } else if (entry.result) {
+    lines.push(
+      entry.result.ok
+        ? 'Status: executed successfully'
+        : `Status: rejected — ${entry.result.reason ?? entry.result.error ?? 'failed'}`,
+    );
+  }
+  return lines.join('\n');
+}
+
+function agentAssistantText(entry: TranscriptEntry): string | null {
+  const agent = entry.agentResult;
+  if (!agent) return null;
+
+  const lines = [agent.confirmation];
+  if (agent.clarifyingQuestion) lines.push(`asking · ${agent.clarifyingQuestion}`);
+  if (agent.failureReason) lines.push(`rejected · ${agent.failureReason}`);
+  if (entry.result) {
+    lines.push(
+      entry.result.ok
+        ? 'Status: operation completed successfully'
+        : `Status: failed · ${entry.result.reason ?? entry.result.error}`,
+    );
+  }
+  if (entry.skipped) lines.push(`skipped · ${entry.skipped}`);
+  return lines.join('\n');
+}
+
+function messagesForEntry(entry: TranscriptEntry): AgentChatMessage[] {
+  if (entry.status !== 'final') return [];
+
+  const messages: AgentChatMessage[] = [];
+  const userText = entry.text.trim();
+  if (userText) messages.push({ role: 'user', content: userText, t: entry.t });
+
+  const assistantText = agentAssistantText(entry) ?? deterministicAssistantText(entry);
+  if (assistantText) messages.push({ role: 'assistant', content: assistantText, t: entry.t });
+  return messages;
 }
 
 export const useVoiceStore = create<VoiceState>((set, get) => ({
@@ -94,6 +144,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
   attachResult: (id, outcome) => {
     set({ entries: replace(get().entries, id, { ...outcome, agentPending: false }) });
   },
+
+  buildAgentChatHistory: () => (
+    get().entries.flatMap(messagesForEntry).slice(-MAX_AGENT_CHAT_MESSAGES)
+  ),
 
   setPendingPlan: (plan) => set({ pendingPlan: { plan, expiresAt: Date.now() + 120_000 } }),
   getPendingPlan: () => {

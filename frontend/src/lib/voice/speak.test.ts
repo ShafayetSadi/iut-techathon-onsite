@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MotionResult } from '@/lib/motion/commands';
 import type { AgentResponse } from './agentApi';
-import { describeOutcome } from './speak';
+import { describeOutcome, humanizeVoiceError } from './speak';
 
 function agent(overrides: Partial<AgentResponse> = {}): AgentResponse {
   return {
@@ -36,7 +36,7 @@ describe('describeOutcome', () => {
       skipped: 'Target is outside the workspace radius',
     });
     expect(line).toBe(
-      'I understood that you want me to tap key 5 twice. Target is outside the workspace radius.',
+      'I understood that you want me to tap key 5 twice. That move is outside the robot\'s safe workspace.',
     );
   });
 
@@ -51,7 +51,7 @@ describe('describeOutcome', () => {
       result: result({ ok: false, reason: 'Step 3 failed: unreachable' }),
     });
     expect(line).toBe(
-      'I understood that you want me to tap key 5 twice. That failed: Step 3 failed: unreachable.',
+      'I understood that you want me to tap key 5 twice. I cannot reach that target safely.',
     );
   });
 
@@ -61,7 +61,7 @@ describe('describeOutcome', () => {
       result: result({ ok: false, error: 'joint_limit' }),
     });
     expect(line).toBe(
-      'I understood that you want me to tap key 5 twice. That failed: joint_limit.',
+      'I understood that you want me to tap key 5 twice. That move would exceed a joint limit.',
     );
   });
 
@@ -71,12 +71,11 @@ describe('describeOutcome', () => {
       skipped: 'Robot pose changed while the instruction was being planned. Please try again.',
     });
     expect(line).toBe(
-      'I understood that you want me to tap key 5 twice. Robot pose changed while the instruction was being planned. Please try again.',
+      'I understood that you want me to tap key 5 twice. The robot moved while I was planning. Please say the command again.',
     );
   });
 
-  // The backend surfaces raw provider/Pydantic dumps here; reading one aloud is useless.
-  it('speaks only the first line of a multi-line failure reason', () => {
+  it('humanizes a multi-line provider or validation dump', () => {
     const line = describeOutcome({
       agentResult: agent({
         status: 'rejected',
@@ -86,8 +85,10 @@ describe('describeOutcome', () => {
       }),
     });
     expect(line).toBe(
-      'I could not safely interpret that instruction. OpenRouter could not produce a valid plan: 1 validation error for AgentDraft.',
+      'I could not safely interpret that instruction. I could not safely plan that instruction. Please try phrasing it a little differently.',
     );
+    expect(line).not.toContain('validation error');
+    expect(line).not.toContain('Input tag');
   });
 
   it('truncates an overlong failure reason at a word boundary', () => {
@@ -101,12 +102,12 @@ describe('describeOutcome', () => {
 
   it('speaks the skip reason on the deterministic path', () => {
     const line = describeOutcome({ skipped: 'Robot is not ready yet.' });
-    expect(line).toBe('Robot is not ready yet.');
+    expect(line).toBe('The robot is not ready yet. Please try again in a moment.');
   });
 
   it('speaks the failure reason for a deterministic command the pipeline rejected', () => {
     const line = describeOutcome({ result: result({ ok: false, reason: 'Target is unreachable' }) });
-    expect(line).toBe('Target is unreachable.');
+    expect(line).toBe('I cannot reach that target safely.');
   });
 
   it('stays silent when a deterministic command simply executed', () => {
@@ -115,5 +116,32 @@ describe('describeOutcome', () => {
 
   it('stays silent when there is nothing to report', () => {
     expect(describeOutcome({})).toBeNull();
+  });
+});
+
+describe('humanizeVoiceError', () => {
+  it('turns short or empty audio into an actionable retry prompt', () => {
+    expect(humanizeVoiceError('Nothing was heard.')).toBe(
+      'I could not hear enough audio. Hold the button while you speak, then try again.',
+    );
+    expect(humanizeVoiceError('audio_too_short')).toBe(
+      'I could not hear enough audio. Hold the button while you speak, then try again.',
+    );
+  });
+
+  it('does not leak backend validation details', () => {
+    expect(
+      humanizeVoiceError(
+        "OpenRouter could not produce a valid plan: 1 validation error for AgentDraft\nsteps.0.action\nInput tag 'move_tip'",
+      ),
+    ).toBe('I could not safely plan that instruction. Please try phrasing it a little differently.');
+  });
+
+  it('humanizes common motion and concurrency failures', () => {
+    expect(humanizeVoiceError('Previous voice command is still executing.')).toBe(
+      'I am still finishing the previous voice command. Please wait a moment.',
+    );
+    expect(humanizeVoiceError('joint_limit')).toBe('That move would exceed a joint limit.');
+    expect(humanizeVoiceError('Target is unreachable')).toBe('I cannot reach that target safely.');
   });
 });

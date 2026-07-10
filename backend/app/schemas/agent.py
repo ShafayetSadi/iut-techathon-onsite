@@ -91,12 +91,21 @@ class TemplateAlternative(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class AgentChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=1200)
+    t: int = Field(ge=0)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class AgentRequest(BaseModel):
     transcript: str = Field(min_length=1, max_length=2000)
     resolution_status: Literal["unmatched", "ambiguous", "clarification"] = Field(alias="resolutionStatus")
     alternatives: list[TemplateAlternative] | None = None
     current_joints: dict[str, float] = Field(alias="currentJoints")
     pending_plan: AgentDraft | None = Field(default=None, alias="pendingPlan")
+    chat_history: list[AgentChatMessage] = Field(default_factory=list, max_length=10, alias="chatHistory")
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
