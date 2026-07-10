@@ -333,7 +333,7 @@ export const useMotionStore = create<MotionState>((set, get) => ({
           return { commandId, ok: false, error: errorCodeFromReason(response.message), reason: response.message };
         }
 
-        set({ status: 'ready', mode: 'idle', target: null, autoError: null });
+        set({ status: 'ready', mode: 'idle', target: null, activePin: null, autoError: null });
         get().pushLog(response.message, 'ok');
         return {
           commandId,

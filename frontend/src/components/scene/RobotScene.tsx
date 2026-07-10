@@ -95,6 +95,9 @@ function keyStatusForDigit(
 ): KeyVisualStatus {
   if (tipPosition.distanceTo(key.touchPoint) <= TOUCH_TOLERANCE_M) return 'pressed';
 
+  const isAutoPlaying = motion.mode === 'auto' && motion.status === 'moving' && motion.activePin !== null;
+  if (!isAutoPlaying) return 'idle';
+
   const matchingSteps = motion.pinProgress.filter((step) => step.digit === digit);
   if (matchingSteps.some((step) => step.status === 'moving')) return 'moving';
   if (matchingSteps.some((step) => step.status === 'pressed')) return 'pressed';

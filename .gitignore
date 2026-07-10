@@ -42,3 +42,4 @@ yarn-error.log*
 test/logs/
 
 .claude/
+hardware/wokwi/.pio/libdeps/esp32dev/
