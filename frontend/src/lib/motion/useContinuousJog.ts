@@ -21,6 +21,7 @@
 
 import { useCallback, useEffect, useMemo } from "react";
 import { useMotionStore } from "./store";
+import { jogStepScale, useViewerStore } from "../viewer/viewerStore";
 import type { Vec3 } from "./commands";
 
 /** Tick rate for continuous jog dispatch. */

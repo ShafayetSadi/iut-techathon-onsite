@@ -8,6 +8,18 @@
 
 import { create } from 'zustand';
 
+export type JogStepMm = 1 | 5 | 10;
+
+const JOG_STEP_SCALE: Record<JogStepMm, number> = {
+  1: 0.28,
+  5: 0.62,
+  10: 1,
+};
+
+export function jogStepScale(mm: JogStepMm): number {
+  return JOG_STEP_SCALE[mm];
+}
+
 export interface ViewerState {
   showCollision: boolean;
   useDegrees: boolean;
@@ -15,12 +27,14 @@ export interface ViewerState {
   showTestMarker: boolean;
   showEEMarker: boolean;
   autoRotate: boolean;
+  jogStepMm: JogStepMm;
   /** Joint currently under the cursor in the 3D view (for sidebar highlight). */
   hoveredJoint: string | null;
 
   toggle: (key: BooleanViewerKey) => void;
   set: (key: BooleanViewerKey, value: boolean) => void;
   setHoveredJoint: (name: string | null) => void;
+  setJogStepMm: (mm: JogStepMm) => void;
 }
 
 type BooleanViewerKey =
@@ -38,9 +52,11 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   showTestMarker: true,
   showEEMarker: true,
   autoRotate: false,
+  jogStepMm: 10,
   hoveredJoint: null,
 
   toggle: (key) => set({ [key]: !get()[key] } as Pick<ViewerState, BooleanViewerKey>),
   set: (key, value) => set({ [key]: value } as Pick<ViewerState, BooleanViewerKey>),
   setHoveredJoint: (name) => set({ hoveredJoint: name }),
+  setJogStepMm: (mm) => set({ jogStepMm: mm }),
 }));

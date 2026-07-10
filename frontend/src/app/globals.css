@@ -143,13 +143,18 @@ body {
   background: var(--bg-2);
   border-right: 1px solid var(--border-soft);
   padding: 16px 14px;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
   animation: panel-in 0.35s var(--ease) both;
 }
+.panel--left {
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
 .panel--right {
+  overflow-y: auto;
   border-right: none;
   border-left: 1px solid var(--border-soft);
   animation-delay: 0.05s;
@@ -173,6 +178,267 @@ body {
 }
 .panel__h:first-child {
   margin-top: 0;
+}
+.panel__h--sub {
+  margin: 0 0 4px;
+}
+.panel__h--sub::after {
+  display: none;
+}
+
+/* ── Control mode tabs ─────────────────────────────────── */
+.mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+.mode-tabs__btn {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  padding: 8px 4px;
+  border-radius: calc(var(--radius-sm) - 2px);
+  cursor: pointer;
+  transition:
+    background 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.mode-tabs__btn:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+.mode-tabs__btn--active {
+  color: var(--text);
+  background: var(--panel-3);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.mode-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mode-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mode-section__hint {
+  margin: -4px 0 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  line-height: 1.45;
+}
+.panel-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+
+/* ── Collapsible sections ──────────────────────────────── */
+.collapse {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  overflow: hidden;
+}
+.collapse__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  padding: 10px 11px;
+  cursor: pointer;
+  transition: color 0.12s var(--ease), background 0.12s var(--ease);
+}
+.collapse__head:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+.collapse__chev {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.collapse__body {
+  padding: 0 10px 10px;
+}
+
+/* ── Manual control ──────────────────────────────────────── */
+.manual-control {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.manual-control__joystick {
+  position: relative;
+  z-index: 0;
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 16px 12px;
+  box-shadow: var(--shadow-sm);
+}
+.step-size {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.step-size__label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.step-size__opts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+.step-size__btn {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 7px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.12s var(--ease),
+    color 0.12s var(--ease),
+    background 0.12s var(--ease);
+}
+.step-size__btn:hover {
+  color: var(--text);
+  border-color: var(--clay-dim);
+}
+.step-size__btn--active {
+  color: var(--text);
+  background: var(--panel-3);
+  border-color: var(--clay-dim);
+}
+.kbd-guide {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 10px 11px;
+}
+.kbd-guide__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.kbd-guide__grid kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  text-align: center;
+  padding: 2px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+}
+.kbd-guide__hint {
+  margin: 8px 0 0;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+/* ── Command inspector ───────────────────────────────────── */
+.cmd-inspector {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 10px 11px;
+}
+.cmd-inspector__grid {
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.cmd-inspector__row {
+  display: grid;
+  grid-template-columns: 78px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+.cmd-inspector__row dt {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.cmd-inspector__row dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+  line-height: 1.4;
+  word-break: break-word;
+}
+.cmd-inspector__ok {
+  color: #8fbf8a;
+}
+.cmd-inspector__err {
+  color: #d97878;
+}
+
+/* ── Viewer control groups ───────────────────────────────── */
+.controls__group {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.controls__grouplabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.unit-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+.unit-toggle__btn {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 7px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.unit-toggle__btn--active {
+  color: var(--text);
+  background: var(--panel-3);
+  border-color: var(--clay-dim);
 }
 .stage {
   position: relative;
@@ -277,11 +543,11 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  background: var(--panel);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  padding: 16px 12px;
-  box-shadow: var(--shadow-sm);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
 }
 .joystick__row {
   display: flex;

@@ -4,8 +4,6 @@ import { useState } from "react";
 import { useMotionStore } from "@/lib/motion/store";
 import type { Vec3 } from "@/lib/motion/commands";
 
-const JOG_STEP_M = 0.25;
-
 function metersFromMm(value: string): number {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed / 1000 : 0;
@@ -16,17 +14,6 @@ export default function CartesianControls() {
   const eePosition = useMotionStore((s) => s.eePosition);
   const status = useMotionStore((s) => s.status);
   const [target, setTarget] = useState({ x: "550", y: "-50", z: "50" });
-
-  const jog = (axis: "x" | "y" | "z", delta: number) => {
-    void dispatch({
-      type: "jog_cartesian",
-      delta: {
-        x: axis === "x" ? delta : 0,
-        y: axis === "y" ? delta : 0,
-        z: axis === "z" ? delta : 0,
-      },
-    });
-  };
 
   const moveTo = () => {
     const next: Vec3 = {
@@ -47,57 +34,6 @@ export default function CartesianControls() {
 
   return (
     <div className="cartesian">
-      <div className="cartesian__grid">
-        <button
-          className="btn"
-          type="button"
-          onClick={() => jog("z", JOG_STEP_M)}
-          disabled={status === "moving"}
-        >
-          Z+
-        </button>
-        <button
-          className="btn"
-          type="button"
-          onClick={() => jog("y", JOG_STEP_M)}
-          disabled={status === "moving"}
-        >
-          Y+
-        </button>
-        <button
-          className="btn"
-          type="button"
-          onClick={() => jog("x", JOG_STEP_M)}
-          disabled={status === "moving"}
-        >
-          X+
-        </button>
-        <button
-          className="btn"
-          type="button"
-          onClick={() => jog("z", -JOG_STEP_M)}
-          disabled={status === "moving"}
-        >
-          Z-
-        </button>
-        <button
-          className="btn"
-          type="button"
-          onClick={() => jog("y", -JOG_STEP_M)}
-          disabled={status === "moving"}
-        >
-          Y-
-        </button>
-        <button
-          className="btn"
-          type="button"
-          onClick={() => jog("x", -JOG_STEP_M)}
-          disabled={status === "moving"}
-        >
-          X-
-        </button>
-      </div>
-
       <div className="targetbox">
         {(["x", "y", "z"] as const).map((axis) => (
           <label className="targetbox__field" key={axis}>
@@ -120,10 +56,10 @@ export default function CartesianControls() {
           onClick={moveTo}
           disabled={status === "moving"}
         >
-          Solve IK
+          Solve &amp; move
         </button>
         <button className="btn" type="button" onClick={loadCurrent}>
-          Use EE
+          Use current EE
         </button>
       </div>
     </div>
