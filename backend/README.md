@@ -26,7 +26,10 @@ The backend will be available at `http://localhost:8000`.
 - `GET /health` - service status.
 - `GET /api/robot/model` - joint names, limits, TCP frame, and neutral pose.
 - `POST /api/ik/solve` - solve joint angles for a target stylus-tip `{x, y, z}`.
-- `POST /api/motion/jog` - jog the current stylus tip by `{dx, dy, dz}`.
+- `POST /api/motion/jog` - jog the current stylus tip by one full vector delta,
+  e.g. `{ "delta": { "x": 0.02, "y": 0.01, "z": 0.0 } }`. Joystick,
+  keyboard, and button jogs should all use this same endpoint through the
+  frontend motion pipeline.
 - `GET /api/panel/keys` - fixed test-panel key coordinates from `key.config.json`.
 - `POST /api/pin/sequence` - Phase 4 sequencing scaffold.
 - `POST /api/voice/command` - Phase 3 deterministic voice-command scaffold.

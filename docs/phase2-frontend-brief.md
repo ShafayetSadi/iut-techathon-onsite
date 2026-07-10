@@ -10,19 +10,19 @@
 
 Don't rebuild these — they exist and work:
 
-| Piece | File | Status |
-|---|---|---|
-| IK solver (damped least-squares, multi-seed) | `backend/app/robot/ik_solver.py` | ✅ Done |
-| `/api/ik/solve`, `/api/motion/jog` endpoints | `backend/app/api/routes_ik.py`, `routes_motion.py` | ✅ Done |
-| Safety/workspace validation | `backend/app/motion/safety.py`, frontend `lib/motion/validate.ts` | ✅ Done |
-| `MotionCommand` → `dispatch()` → backend → store pipeline | `lib/motion/commands.ts`, `store.ts`, `backendApi.ts` | ✅ Done |
-| Discrete-step Cartesian jog (button grid) | `components/viewer/CartesianControls.tsx` | ✅ Done (this *is* a crude joystick — step buttons, not analog drag) |
-| Joint-space sliders (drag-to-rotate in 3D + sidebar) | `components/viewer/JointSliders.tsx`, `RobotScene.tsx` | ✅ Done |
+| Piece                                                     | File                                                              | Status                                                               |
+| --------------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------- |
+| IK solver (damped least-squares, multi-seed)              | `backend/app/robot/ik_solver.py`                                  | ✅ Done                                                              |
+| `/api/ik/solve`, `/api/motion/jog` endpoints              | `backend/app/api/routes_ik.py`, `routes_motion.py`                | ✅ Done                                                              |
+| Safety/workspace validation                               | `backend/app/motion/safety.py`, frontend `lib/motion/validate.ts` | ✅ Done                                                              |
+| `MotionCommand` → `dispatch()` → backend → store pipeline | `lib/motion/commands.ts`, `store.ts`, `backendApi.ts`             | ✅ Done                                                              |
+| Discrete-step Cartesian jog (button grid)                 | `components/viewer/CartesianControls.tsx`                         | ✅ Done (this _is_ a crude joystick — step buttons, not analog drag) |
+| Joint-space sliders (drag-to-rotate in 3D + sidebar)      | `components/viewer/JointSliders.tsx`, `RobotScene.tsx`            | ✅ Done                                                              |
 
 **Remaining for Phase 2, per the rubric ("Manual Control — GUI Joystick + Keyboard"):**
 
 1. A real **draggable, analog, on-screen joystick** for jogging the stylus tip (not discrete buttons).
-2. **Keyboard jog** (arrow/WASD + modifiers) driving the *same* motion, not a parallel implementation.
+2. **Keyboard jog** (arrow/WASD + modifiers) driving the _same_ motion, not a parallel implementation.
 
 Both are new files under `components/controls/` — a folder the Phase 1 brief already reserved for this work (see §5 of that doc).
 
@@ -68,7 +68,7 @@ Every jog — discrete or continuous — is a full HTTP round-trip to a numerica
 // (last-request-wins), so the store never rewinds to a stale position.
 ```
 
-Both `Joystick.tsx` and `KeyboardJog.tsx` should report "current desired jog vector" into this one hook, not implement their own timers. This keeps the rubric's "one pipeline" principle intact — the joystick and keyboard are two *inputs* into one *rate-limited dispatcher*, same as `dispatch()` is one entry point for all five triggers.
+Both `Joystick.tsx` and `KeyboardJog.tsx` should report "current desired jog vector" into this one hook, not implement their own timers. This keeps the rubric's "one pipeline" principle intact — the joystick and keyboard are two _inputs_ into one _rate-limited dispatcher_, same as `dispatch()` is one entry point for all five triggers.
 
 ---
 
@@ -87,12 +87,12 @@ Both `Joystick.tsx` and `KeyboardJog.tsx` should report "current desired jog vec
 - Track held keys in a `Set<string>` via `keydown`/`keyup` on `window`; derive the jog vector from the set every tick (don't dispatch directly from the key event — that's what caused the single-axis-per-call problem in the first place).
 - Suggested mapping (confirm with your team before locking it in):
 
-| Keys | Axis |
-|---|---|
-| `↑` / `W` , `↓` / `S` | Y |
-| `→` / `D` , `←` / `A` | X |
-| `PageUp` / `E` , `PageDown` / `Q` | Z |
-| `Shift` held | fine step (e.g. 0.3× speed) instead of a separate mode |
+| Keys                              | Axis                                                   |
+| --------------------------------- | ------------------------------------------------------ |
+| `↑` / `W` , `↓` / `S`             | Y                                                      |
+| `→` / `D` , `←` / `A`             | X                                                      |
+| `PageUp` / `E` , `PageDown` / `Q` | Z                                                      |
+| `Shift` held                      | fine step (e.g. 0.3× speed) instead of a separate mode |
 
 - Guard: ignore key events when `document.activeElement` is an `<input>`/`<textarea>` (the joint-slider numeric inputs are real text fields — don't hijack arrow keys away from them).
 
@@ -100,7 +100,7 @@ Both `Joystick.tsx` and `KeyboardJog.tsx` should report "current desired jog vec
 
 - Single hook, one `requestAnimationFrame`-driven or `setInterval`-driven ticker (interval is simpler and easier to rate-cap deliberately; RAF ties you to display refresh rate for no benefit here).
 - Input: a ref/state of the current `{x, y, z}` jog vector (magnitude 0 = idle, nothing dispatched).
-- Output: dispatches `{ type: 'jog_cartesian', delta, frame: 'world' }` through the *existing* `useMotionStore().dispatch` — never calls `backendApi.ts` directly. This keeps the safety gate (`validate.ts`) and logging in the loop for every jog, exactly as it already is for the button grid.
+- Output: dispatches `{ type: 'jog_cartesian', delta, frame: 'world' }` through the _existing_ `useMotionStore().dispatch` — never calls `backendApi.ts` directly. This keeps the safety gate (`validate.ts`) and logging in the loop for every jog, exactly as it already is for the button grid.
 
 ---
 
@@ -109,7 +109,7 @@ Both `Joystick.tsx` and `KeyboardJog.tsx` should report "current desired jog vec
 - [ ] `MotionCommand`'s `jog_cartesian` carries a `Vec3` delta (§2), and `CartesianControls.tsx` still works after the change.
 - [ ] `useContinuousJog` exists, rate-limits to ~12-15 Hz, and discards stale/out-of-order responses.
 - [ ] On-screen joystick drags smoothly, deadzone feels right (no jitter at rest), and the arm tracks it without visible lag or backward snapping.
-- [ ] Keyboard jog drives the *same* motion (same hook), doesn't fight with text inputs, and `Shift` gives a finer step.
+- [ ] Keyboard jog drives the _same_ motion (same hook), doesn't fight with text inputs, and `Shift` gives a finer step.
 - [ ] Both controls respect `validateCommand` — try dragging the joystick toward a point outside `MAX_REACH_M` and confirm you get a rejection in the event log, not a silent failure or a crash.
 - [ ] Nothing new holds joint/EE state outside `useMotionStore` — controls only ever call `dispatch`.
 
