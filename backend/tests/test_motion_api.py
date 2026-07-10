@@ -42,3 +42,11 @@ def test_motion_jog_endpoint() -> None:
 
     assert response.status_code == 200
     assert "success" in response.json()
+
+
+def test_robot_urdf_endpoint_serves_source_model() -> None:
+    response = asyncio.run(_request("GET", "/api/robot/urdf"))
+
+    assert response.status_code == 200
+    assert "<robot name=\"stylus_arm\">" in response.text
+    assert "stylus_tip" in response.text
