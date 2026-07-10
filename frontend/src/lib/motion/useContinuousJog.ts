@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * useContinuousJog.ts — shared rate-limited dispatcher for continuous jog
@@ -19,9 +19,9 @@
  * still overlap *each other's* requests, which defeats the point.
  */
 
-import { useCallback, useEffect, useMemo } from 'react';
-import { useMotionStore } from './store';
-import type { Vec3 } from './commands';
+import { useCallback, useEffect, useMemo } from "react";
+import { useMotionStore } from "./store";
+import type { Vec3 } from "./commands";
 
 /** Tick rate for continuous jog dispatch. */
 export const JOG_TICK_MS = 80;
@@ -82,7 +82,12 @@ function tick() {
   inFlight = true;
   void useMotionStore
     .getState()
-    .dispatch({ type: 'jog_cartesian', delta, frame: 'world', continuous: true })
+    .dispatch({
+      type: "jog_cartesian",
+      delta,
+      frame: "world",
+      continuous: true,
+    })
     .finally(() => {
       inFlight = false;
       endGestureIfIdle();

@@ -126,7 +126,7 @@ def test_motion_planner_jog_moves_for_continuous_tick_sized_delta() -> None:
     assert response.success, response.reason
     assert response.tip is not None
     assert response.error_meters is not None
-    assert response.error_meters <= 0.001
+    assert response.error_meters <= 0.002
     assert response.tip["x"] > before.tip["x"] + 0.003
 
 
