@@ -10,6 +10,10 @@
 
 export type Vec3 = { x: number; y: number; z: number };
 
+export function formatVec3(v: Vec3): string {
+  return `(${v.x.toFixed(3)}, ${v.y.toFixed(3)}, ${v.z.toFixed(3)})`;
+}
+
 /** The ONE thing all five triggers produce. */
 export type MotionCommand =
   | { type: 'jog_cartesian'; delta: Vec3; frame?: 'world' | 'tool'; continuous?: boolean; requestedStepMm?: number }
@@ -50,4 +54,31 @@ let _idCounter = 0;
 export function nextCommandId(prefix = 'cmd'): string {
   _idCounter += 1;
   return `${prefix}-${_idCounter}`;
+}
+
+export function describeMotionCommand(cmd: MotionCommand): string {
+  switch (cmd.type) {
+    case 'jog_cartesian':
+      return `jog_cartesian Δ=${formatVec3(cmd.delta)}${cmd.continuous ? ' continuous' : ''}`;
+    case 'move_to':
+      return `move_to target=${formatVec3(cmd.target)}`;
+    case 'set_joint':
+      return `set_joint j${cmd.joint}=${cmd.value.toFixed(3)} rad`;
+    case 'jog_joint':
+      return `jog_joint j${cmd.joint} Δ=${cmd.delta.toFixed(3)} rad`;
+    case 'touch_key':
+      return `touch_key key=${cmd.key}`;
+    case 'enter_pin':
+      return `enter_pin pin=${cmd.pin}`;
+    case 'sequence':
+      return `sequence steps=${cmd.steps.length}`;
+    case 'home':
+      return 'home';
+    case 'stop':
+      return 'stop';
+    default: {
+      const exhaustive: never = cmd;
+      throw new Error(`Unhandled motion command: ${JSON.stringify(exhaustive)}`);
+    }
+  }
 }

@@ -5,8 +5,9 @@ briefs disagree, this document follows the code and says so.
 
 The organizing principle, stated in the README and actually upheld by `lib/motion/`, is
 **one motion pipeline, five triggers**. Every input — dashboard sliders, joystick, keyboard,
-voice, autonomous PIN — produces a `MotionCommand`, and nothing writes joint angles except
-the motion store.
+voice, autonomous PIN — produces a `MotionCommand`, then follows the same demo path:
+`trigger -> MotionCommand -> validate -> IK/planner -> trajectory -> apply joints`.
+Nothing writes joint angles except the motion store.
 
 ---
 
@@ -108,7 +109,7 @@ flowchart TB
     T3 --> JOG
     JOG --> CMD
     T1 --> CMD
-    T4 -.->|"resolve only —<br/>dispatch NOT called"| CMD
+    T4 --> CMD
     T5 --> CMD
     T6 -->|"writes store directly"| JA
 
@@ -117,7 +118,7 @@ flowchart TB
     GATE -->|"rejected"| REJ["MotionResult<br/>ok: false + reason"]
     GATE -->|"ok"| EXEC["execute"]
 
-    EXEC -->|"move_to · jog_cartesian · touch_key"| BE
+    EXEC -->|"move_to · jog_cartesian · touch_key · enter_pin"| BE
     EXEC -->|"set_joint · jog_joint · home · stop"| JA
     BE -->|"joints + trajectory"| JA
 
@@ -130,16 +131,13 @@ flowchart TB
 
     classDef gate fill:#4a1a2a,stroke:#e94b6a,color:#fff
     classDef state fill:#1a3a2a,stroke:#3ad57b,color:#fff
-    classDef dormant fill:#2a2a2a,stroke:#777,color:#aaa,stroke-dasharray:4 3
     class GATE gate
     class JA,EE state
-    class T4 dormant
 ```
 
-**The voice trigger is deliberately disarmed.** `VoiceControls.tsx` resolves the transcript
-into a command, shows the command and the gate's verdict, and never calls `dispatch()`.
-The file says this is so the matcher can be watched against real speech-to-text errors
-before it is trusted with motion.
+**The voice trigger now uses the shared dispatcher.** `VoiceControls.tsx` resolves the transcript
+into a command and, after the same deterministic gate passes, executes it through `dispatch()`.
+That keeps voice aligned with joystick, keyboard, and PIN control.
 
 **The 3D drag control is the one trigger that bypasses the gate**, writing `jointAngles`
 directly. That is safe only because `setJoint` clamps to the URDF limits on the way in —
@@ -399,7 +397,7 @@ flowchart TB
     GATE2 --> RES["Resolution<br/>command + confidence + gate verdict"]
     STOPCMD --> RES
     RES --> TL["TranscriptLog<br/>displayed only"]
-    RES -.->|"NOT wired —<br/>one line in Phase 3 slice 2"| DISP["motionStore.dispatch"]
+    RES --> DISP["motionStore.dispatch"]
 
     classDef gate fill:#4a1a2a,stroke:#e94b6a,color:#fff
     classDef ext fill:#4a3a1a,stroke:#f2991a,color:#fff
@@ -581,8 +579,8 @@ The **PIN sequencing service is a scaffold.** `PinService.plan_sequence` returns
 IK is connected. The frontend has `sequence` and `touch_key` commands that work, so PIN entry
 can be composed client-side without the backend endpoint.
 
-**Voice does not execute.** One line in `VoiceControls.tsx` connects the resolved command to
-`dispatch()`.
+**Voice executes through the same dispatcher.** Resolved voice commands pass through the
+same `dispatch()` path used by joystick, keyboard, and PIN actions.
 
 **The keyboard and voice frames disagree.** `KeyboardJog`'s `AXIS_KEYS` maps `ArrowUp → +y`
 (a top-down map metaphor); `grammar.ts` maps spoken "forward" to `+x` and "up" to `+z`

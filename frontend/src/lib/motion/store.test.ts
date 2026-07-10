@@ -22,6 +22,8 @@ function resetStore() {
     mode: 'idle',
     status: 'ready',
     log: [],
+    lastCommand: null,
+    lastError: null,
     robotReady: true,
     continuousJogActive: false,
     stopEpoch: 0,

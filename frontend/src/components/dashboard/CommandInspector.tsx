@@ -19,6 +19,9 @@ export default function CommandInspector() {
   const pinProgress = useMotionStore((s) => s.pinProgress);
   const continuousJogActive = useMotionStore((s) => s.continuousJogActive);
   const autoError = useMotionStore((s) => s.autoError);
+  const lastCommand = useMotionStore((s) => s.lastCommand);
+  const lastError = useMotionStore((s) => s.lastError);
+  const target = useMotionStore((s) => s.target);
   const recording = useVoiceStore((s) => s.recording);
   const latestVoice = useVoiceStore((s) => s.entries[s.entries.length - 1]);
 
@@ -30,14 +33,17 @@ export default function CommandInspector() {
       ? [...log].reverse().find((entry) => entry.level === 'error')
       : null;
 
-  let command = '—';
+  let command = lastCommand ?? '—';
   let safety = '—';
-  let detail = '—';
+  let detailLabel = 'Target';
+  let detail = target ? `${target.x.toFixed(3)}, ${target.y.toFixed(3)}, ${target.z.toFixed(3)} m` : '—';
   let source = SOURCE_LABEL[mode] ?? mode.toUpperCase();
   let commandStatus = status.toUpperCase();
+  const safetySummary = lastError ? `LAST ERROR · ${lastError}` : undefined;
 
   if (mode === 'auto' && activePin) {
     command = activeStep ? `PRESS KEY ${activeStep.digit}` : `RUN PIN ${activePin}`;
+    detailLabel = 'Progress';
     detail = `Step ${completedSteps} / 6`;
     safety = autoError ? `BLOCKED · ${autoError}` : 'VALIDATED';
   } else if ((mode === 'voice' || showLatestVoice) && latestVoice) {
@@ -45,13 +51,16 @@ export default function CommandInspector() {
     command = latestVoice.text;
     if (latestVoice.status === 'pending') {
       safety = 'PENDING';
+      detailLabel = 'Stage';
       detail = recording ? 'Listening…' : 'Transcribing…';
       commandStatus = 'PENDING';
     } else if (latestVoice.status === 'error') {
       safety = 'FAILED';
+      detailLabel = 'Transcript';
       detail = latestVoice.text;
       commandStatus = 'FAILED';
     } else if (latestVoice.resolution?.status === 'matched' && latestVoice.resolution.command) {
+      detailLabel = 'Normalized';
       detail = describeCommand(latestVoice.resolution.command);
       safety = latestVoice.resolution.gate?.ok ? 'PASSED' : `BLOCKED · ${latestVoice.resolution.gate?.reason}`;
       if (latestVoice.result) {
@@ -61,14 +70,18 @@ export default function CommandInspector() {
         safety = `BLOCKED · ${latestVoice.skipped}`;
       }
     } else if (latestVoice.resolution) {
+      detailLabel = 'Resolution';
       detail = latestVoice.resolution.reason ?? latestVoice.resolution.status;
       safety = 'BLOCKED';
       commandStatus = 'REJECTED';
     }
   } else if (continuousJogActive || mode === 'jog') {
     command = 'JOG CARTESIAN';
+    detailLabel = 'Mode';
     detail = 'Continuous world-frame jog';
     safety = latestError ? `BLOCKED · ${latestError.text}` : 'VALIDATED';
+  } else if (safetySummary) {
+    safety = safetySummary;
   }
 
   return (
@@ -84,7 +97,7 @@ export default function CommandInspector() {
           <dd>{command}</dd>
         </div>
         <div className="cmd-inspector__row">
-          <dt>Normalized</dt>
+          <dt>{detailLabel}</dt>
           <dd>{detail}</dd>
         </div>
         <div className="cmd-inspector__row">

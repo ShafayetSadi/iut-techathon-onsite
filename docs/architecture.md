@@ -8,8 +8,8 @@ PIN sequencing, voice scaffolding, and hardware checklist metadata.
 ## Architecture Principles
 
 - One motion pipeline: dashboard controls, joystick, keyboard jogs, key touches,
-  voice commands, and autonomous PIN entry all produce motion commands that go
-  through the same validation and planning path.
+  voice commands, and autonomous PIN entry all produce `MotionCommand`s and go
+  through the same safe path: trigger -> MotionCommand -> validate -> IK/planner -> trajectory -> apply joints.
 - One robot model: `6_dof_arm.urdf` is the source of truth for the robot chain,
   controlled joints, joint limits, and TCP link.
 - One panel model: `key.config.json` is the source of truth for the six test
@@ -102,8 +102,9 @@ flowchart TB
 ## Motion Command Flow
 
 The frontend owns the rendered arm state and sends model-aware requests to the
-backend whenever a command needs IK or cartesian motion. Successful backend
-responses include final joints, TCP position, error, and a trajectory that the
+backend whenever a command needs IK or cartesian motion. The demo pipeline is
+`trigger -> MotionCommand -> validate -> IK/planner -> trajectory -> apply joints`.
+Successful backend responses include final joints, TCP position, error, and a trajectory that the
 frontend can animate.
 
 ```mermaid
@@ -118,13 +119,14 @@ sequenceDiagram
     participant State as Backend RobotStateStore
     participant Scene as Three.js Scene
 
-    User->>UI: joystick, keyboard, IK target, key touch
+    User->>UI: joystick, keyboard, voice, PIN, IK target, key touch
+    UI->>UI: trigger -> MotionCommand
     UI->>Store: dispatch(MotionCommand)
     Store->>Gate: validateCommand(command)
     Gate-->>Store: ok or typed rejection
 
     alt Command requires backend planning
-        Store->>API: POST /api/ik/solve or /api/motion/jog
+        Store->>API: POST /api/ik/solve or /api/motion/jog or /api/pin/sequence
         API->>Planner: solve_target or jog
         Planner->>Planner: validate target workspace
         Planner->>IK: solve target from current joints

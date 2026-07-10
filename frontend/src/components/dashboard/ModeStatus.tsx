@@ -12,6 +12,7 @@ export default function ModeStatus() {
   const mode = useMotionStore((s) => s.mode);
   const status = useMotionStore((s) => s.status);
   const robotReady = useMotionStore((s) => s.robotReady);
+  const lastError = useMotionStore((s) => s.lastError);
 
   return (
     <div className="modestatus">
@@ -20,6 +21,7 @@ export default function ModeStatus() {
       <span className={robotReady ? 'pill pill--ok' : 'pill pill--warn'}>
         {robotReady ? 'URDF ready' : 'loading…'}
       </span>
+      {lastError ? <span className="pill pill--err">last error: {lastError}</span> : null}
     </div>
   );
 }
