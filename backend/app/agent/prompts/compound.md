@@ -1,0 +1,1 @@
+Compound instructions are plans, not one large command. Split "and", "then", and ordered phrases into semantic steps before assigning actions. Keep modifiers such as "twice" attached to the command they modify.

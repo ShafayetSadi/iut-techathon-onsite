@@ -51,6 +51,37 @@ export default function CommandInspector() {
       safety = 'FAILED';
       detail = latestVoice.text;
       commandStatus = 'FAILED';
+    } else if (latestVoice.agentResult) {
+      // The agent path never produces a `matched` resolution, so it must be read
+      // before the deterministic branches below — otherwise every agent command,
+      // including a successfully executed one, falls through to "BLOCKED".
+      const agent = latestVoice.agentResult;
+      detail = agent.confirmation;
+
+      if (agent.status === 'needs_clarification') {
+        safety = 'PENDING';
+        commandStatus = 'NEEDS CLARIFICATION';
+        detail = agent.clarifyingQuestion ?? agent.confirmation;
+      } else if (agent.status === 'rejected') {
+        safety = `BLOCKED · ${agent.failureReason ?? 'agent produced no safe command'}`;
+        commandStatus = 'REJECTED';
+      } else {
+        // `ready` means every step passed the backend's IK / joint-limit /
+        // workspace preflight before it was ever returned to us.
+        safety = 'VALIDATED';
+        detail = `${agent.steps.length} step${agent.steps.length === 1 ? '' : 's'} · ${agent.confirmation}`;
+        if (latestVoice.result) {
+          commandStatus = latestVoice.result.ok ? 'EXECUTED' : 'REJECTED';
+          if (!latestVoice.result.ok) {
+            safety = `BLOCKED · ${latestVoice.result.reason ?? latestVoice.result.error}`;
+          }
+        } else if (latestVoice.skipped) {
+          commandStatus = 'SKIPPED';
+          safety = `BLOCKED · ${latestVoice.skipped}`;
+        } else {
+          commandStatus = 'READY';
+        }
+      }
     } else if (latestVoice.resolution?.status === 'matched' && latestVoice.resolution.command) {
       detail = describeCommand(latestVoice.resolution.command);
       safety = latestVoice.resolution.gate?.ok ? 'PASSED' : `BLOCKED · ${latestVoice.resolution.gate?.reason}`;

@@ -40,12 +40,42 @@ describe('decideVoiceAction', () => {
     ).toEqual({ kind: 'skip', reason: 'Release the joystick before speaking a command.' });
   });
 
-  it('does not guess ambiguous commands', () => {
+  it('routes ambiguous commands to the agent without guessing', () => {
+    const resolution: Resolution = { status: 'ambiguous', normalized: 'move', reason: 'tie' };
     expect(
-      decideVoiceAction({ status: 'ambiguous', normalized: 'move', reason: 'tie' }, {
+      decideVoiceAction(resolution, {
         continuousJogActive: false,
         robotReady: true,
       }),
-    ).toEqual({ kind: 'skip', reason: 'Not guessing.' });
+    ).toEqual({ kind: 'agent', transcript: 'move', resolution, pendingPlan: undefined });
+  });
+
+  it('routes unmatched raw speech to the agent', () => {
+    const resolution: Resolution = { status: 'unmatched', normalized: 'tap 5 twice' };
+    expect(
+      decideVoiceAction(resolution, { continuousJogActive: false, robotReady: true }, {
+        transcript: 'tap the 5 key twice',
+      }),
+    ).toEqual({
+      kind: 'agent',
+      transcript: 'tap the 5 key twice',
+      resolution,
+      pendingPlan: undefined,
+    });
+  });
+
+  it('sends a matched clarification reply back to the pending agent plan', () => {
+    const pendingPlan = {
+      confirmation: 'Direction is unclear.',
+      steps: [{
+        id: 'move', sourceText: 'move it', intent: 'move', analysis: 'direction missing', status: 'ambiguous' as const,
+      }],
+    };
+    const resolution = matched();
+    expect(
+      decideVoiceAction(resolution, { continuousJogActive: false, robotReady: true }, {
+        transcript: 'up', pendingPlan,
+      }),
+    ).toEqual({ kind: 'agent', transcript: 'up', resolution, pendingPlan });
   });
 });

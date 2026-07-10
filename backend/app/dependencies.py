@@ -1,5 +1,7 @@
 from functools import lru_cache
 
+from app.agent.compiler import AgentCompiler
+from app.agent.service import AgentService
 from app.core.config import get_settings
 from app.hardware.service import HardwareService
 from app.motion.planner import MotionPlanner
@@ -54,6 +56,16 @@ def get_pin_service() -> PinService:
 @lru_cache
 def get_voice_service() -> VoiceService:
     return VoiceService(get_settings())
+
+
+@lru_cache
+def get_agent_compiler() -> AgentCompiler:
+    return AgentCompiler(get_robot_model(), get_motion_planner(), get_panel_service())
+
+
+@lru_cache
+def get_agent_service() -> AgentService:
+    return AgentService(get_settings(), get_robot_model(), get_panel_service(), get_agent_compiler())
 
 
 @lru_cache

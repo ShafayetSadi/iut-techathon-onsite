@@ -13,6 +13,7 @@
 import { create } from 'zustand';
 import type { MotionCommand, MotionResult } from '@/lib/motion/commands';
 import { matchTranscript, type Resolution } from './matcher';
+import type { AgentPendingPlan, AgentResponse } from './agentApi';
 
 export type TranscriptStatus = 'pending' | 'final' | 'error';
 
@@ -25,6 +26,7 @@ export interface TranscriptEntry {
   resolution?: Resolution;
   result?: MotionResult;
   skipped?: string;
+  agentResult?: AgentResponse;
 }
 
 /** Enough history to scroll back through a demo, bounded so it cannot grow forever. */
@@ -40,12 +42,16 @@ export interface VoiceState {
   entries: TranscriptEntry[];
   /** Set by VoiceControls so other components can react to a live mic. */
   recording: boolean;
+  pendingPlan: { plan: AgentPendingPlan; expiresAt: number } | null;
 
   /** Insert a placeholder the moment the button is released, before upload. */
   beginTranscript: () => string;
   /** Attach the recognized text and run it through the matcher. */
   resolveTranscript: (id: string, text: string) => Resolution;
-  attachResult: (id: string, outcome: { result?: MotionResult; skipped?: string }) => void;
+  attachResult: (id: string, outcome: { result?: MotionResult; skipped?: string; agentResult?: AgentResponse }) => void;
+  setPendingPlan: (plan: AgentPendingPlan) => void;
+  getPendingPlan: () => AgentPendingPlan | undefined;
+  clearPendingPlan: () => void;
   failTranscript: (id: string, reason: string) => void;
   clearTranscripts: () => void;
   setRecording: (recording: boolean) => void;
@@ -62,6 +68,7 @@ function replace(
 export const useVoiceStore = create<VoiceState>((set, get) => ({
   entries: [],
   recording: false,
+  pendingPlan: null,
 
   beginTranscript: () => {
     const id = nextId();
@@ -81,6 +88,18 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
   attachResult: (id, outcome) => {
     set({ entries: replace(get().entries, id, outcome) });
   },
+
+  setPendingPlan: (plan) => set({ pendingPlan: { plan, expiresAt: Date.now() + 120_000 } }),
+  getPendingPlan: () => {
+    const pending = get().pendingPlan;
+    if (!pending) return undefined;
+    if (pending.expiresAt <= Date.now()) {
+      set({ pendingPlan: null });
+      return undefined;
+    }
+    return pending.plan;
+  },
+  clearPendingPlan: () => set({ pendingPlan: null }),
 
   failTranscript: (id, reason) => {
     set({ entries: replace(get().entries, id, { status: 'error', text: reason }) });

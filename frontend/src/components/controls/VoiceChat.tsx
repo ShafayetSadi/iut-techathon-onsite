@@ -1,5 +1,14 @@
 'use client';
 
+/**
+ * VoiceChat.tsx — the operator-facing conversation. See docs/problem_statement.md §5 (Phase 3B).
+ *
+ * Display-only: it mirrors `voiceStore.entries` and never captures audio or
+ * dispatches motion. Two kinds of entry land here — deterministic matches from
+ * the grammar, and agent plans from the reasoning layer — and they must be read
+ * in that second order first. See `AssistantMessage`.
+ */
+
 import { useEffect, useRef } from 'react';
 import { useMounted } from '@/lib/hooks/useMounted';
 import { describeCommand } from '@/lib/voice/matcher';
@@ -15,14 +24,8 @@ function userText(entry: TranscriptEntry): string {
   return entry.text;
 }
 
-function assistantText(entry: TranscriptEntry): string {
-  if (entry.status === 'pending') {
-    return 'Transcribing and parsing your command…';
-  }
-  if (entry.status === 'error') {
-    return entry.text;
-  }
-
+/** The deterministic grammar path: a flat report, one fact per line. */
+function matcherText(entry: TranscriptEntry): string {
   const resolution = entry.resolution;
   if (!resolution) return 'No response produced.';
 
@@ -66,9 +69,71 @@ function assistantText(entry: TranscriptEntry): string {
   return lines.join('\n');
 }
 
+function AssistantMessage({ entry }: { entry: TranscriptEntry }) {
+  if (entry.status === 'pending') {
+    return <p className="voice-chat__text">Transcribing and parsing your command…</p>;
+  }
+  if (entry.status === 'error') {
+    return <p className="voice-chat__text">{entry.text}</p>;
+  }
+
+  // An agent entry always carries an `unmatched` or `ambiguous` resolution —
+  // that is exactly what routed it to the agent (see execute.ts). So it must be
+  // read before the matcher branch, or a plan that compiled, passed the backend
+  // safety preflight and executed still reports "I couldn't match that".
+  const agent = entry.agentResult;
+  if (agent) {
+    return (
+      <>
+        <p className="voice-chat__text">{agent.confirmation}</p>
+
+        {agent.steps.length > 0 && (
+          <ol className="voice-chat__steps">
+            {agent.steps.map((step) => (
+              <li key={step.id}>
+                <span>{step.intent}</span>
+                <small>
+                  {entry.result?.ok ? 'completed' : step.status} · {step.analysis}
+                </small>
+              </li>
+            ))}
+          </ol>
+        )}
+
+        {agent.clarifyingQuestion && (
+          <p className="voice-chat__text">asking · {agent.clarifyingQuestion}</p>
+        )}
+        {agent.failureReason && (
+          <p className="voice-chat__text voice-chat__text--multiline">rejected · {agent.failureReason}</p>
+        )}
+        {entry.result && (
+          <p className="voice-chat__text">
+            {entry.result.ok
+              ? 'Status: operation completed successfully'
+              : `Status: failed · ${entry.result.reason ?? entry.result.error}`}
+          </p>
+        )}
+        {entry.skipped && <p className="voice-chat__text">skipped · {entry.skipped}</p>}
+      </>
+    );
+  }
+
+  return <p className="voice-chat__text voice-chat__text--multiline">{matcherText(entry)}</p>;
+}
+
 function assistantTone(entry: TranscriptEntry): string {
   if (entry.status === 'pending') return 'pending';
   if (entry.status === 'error') return 'error';
+
+  const agent = entry.agentResult;
+  if (agent) {
+    if (agent.status === 'needs_clarification') return 'ambiguous';
+    if (agent.status === 'rejected') return 'error';
+    if (entry.skipped) return 'blocked';
+    if (entry.result) return entry.result.ok ? 'ok' : 'error';
+    return 'neutral';
+  }
+
   if (entry.skipped || entry.resolution?.gate?.ok === false) return 'blocked';
   if (entry.result && !entry.result.ok) return 'error';
   if (entry.resolution?.status === 'ambiguous') return 'ambiguous';
@@ -114,7 +179,7 @@ export default function VoiceChat() {
               <div className="voice-chat__meta">
                 <span className="voice-chat__role">Assistant</span>
               </div>
-              <p className="voice-chat__text voice-chat__text--multiline">{assistantText(entry)}</p>
+              <AssistantMessage entry={entry} />
             </div>
           </div>
         ))}
