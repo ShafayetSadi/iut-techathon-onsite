@@ -17,6 +17,7 @@ export type MotionCommand =
   | { type: 'set_joint'; joint: number; value: number } // absolute radians
   | { type: 'jog_joint'; joint: number; delta: number } // e.g. "rotate base 30°"
   | { type: 'touch_key'; key: string } // resolves via key.config.json
+  | { type: 'enter_pin'; pin: string } // autonomous 6-digit panel entry
   | { type: 'sequence'; steps: MotionCommand[] } // PIN entry
   | { type: 'home' }
   | { type: 'stop' };

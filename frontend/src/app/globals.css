@@ -330,6 +330,75 @@ body {
   border-radius: var(--radius);
   padding: 10px;
 }
+.pin-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+}
+.pin-entry__row {
+  display: flex;
+  gap: 6px;
+}
+.pin-entry__input {
+  min-width: 0;
+  flex: 1 1 auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-family: var(--mono);
+  font-size: 15px;
+  letter-spacing: 0;
+}
+.pin-progress {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 5px;
+}
+.pin-progress__cell {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  padding: 5px 3px;
+  text-align: center;
+}
+.pin-progress__cell--moving {
+  border-color: var(--amber-dim);
+  background: rgba(242, 153, 26, 0.12);
+}
+.pin-progress__cell--pressed {
+  border-color: rgba(61, 220, 132, 0.45);
+  background: rgba(61, 220, 132, 0.1);
+}
+.pin-progress__cell--failed {
+  border-color: rgba(233, 75, 106, 0.5);
+  background: rgba(233, 75, 106, 0.12);
+}
+.pin-progress__digit {
+  display: block;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+}
+.pin-progress__meta {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-dim);
+  font-size: 8px;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+.pin-entry__error {
+  color: var(--red);
+  font-size: 11px;
+  line-height: 1.4;
+}
 .btn {
   border: 1px solid var(--border);
   background: var(--panel);
@@ -343,6 +412,12 @@ body {
 }
 .btn:hover {
   background: var(--panel-2);
+}
+.btn:disabled,
+.btn:disabled:hover {
+  cursor: not-allowed;
+  opacity: 0.45;
+  background: var(--panel);
 }
 .btn--primary {
   border-color: var(--amber-dim);

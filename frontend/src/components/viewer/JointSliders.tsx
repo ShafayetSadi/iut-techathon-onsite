@@ -19,6 +19,7 @@ export default function JointSliders() {
   const jointAngles = useMotionStore((s) => s.jointAngles);
   const setJoint = useMotionStore((s) => s.setJoint);
   const ignoreLimits = useMotionStore((s) => s.ignoreLimits);
+  const isAutoRunning = useMotionStore((s) => s.mode === 'auto' && s.status === 'moving' && s.activePin !== null);
   const useDegrees = useViewerStore((s) => s.useDegrees);
   const hovered = useViewerStore((s) => s.hoveredJoint);
   const setHovered = useViewerStore((s) => s.setHoveredJoint);
@@ -52,9 +53,10 @@ export default function JointSliders() {
                 min={lo * mult}
                 max={hi * mult}
                 value={Number(disp.toFixed(useDegrees ? 1 : 3))}
+                disabled={isAutoRunning}
                 onChange={(e) => {
                   const raw = parseFloat(e.target.value);
-                  if (Number.isFinite(raw)) setJoint(i, useDegrees ? raw * DEG2RAD : raw);
+                  if (!isAutoRunning && Number.isFinite(raw)) setJoint(i, useDegrees ? raw * DEG2RAD : raw);
                 }}
               />
               <span className="slider__unit">{useDegrees ? '°' : 'rad'}</span>
@@ -66,7 +68,10 @@ export default function JointSliders() {
               max={hi}
               step={0.0001}
               value={val}
-              onChange={(e) => setJoint(i, parseFloat(e.target.value))}
+              disabled={isAutoRunning}
+              onChange={(e) => {
+                if (!isAutoRunning) setJoint(i, parseFloat(e.target.value));
+              }}
             />
           </div>
         );

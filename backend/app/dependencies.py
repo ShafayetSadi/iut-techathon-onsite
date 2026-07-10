@@ -48,7 +48,7 @@ def get_panel_service() -> PanelService:
 
 @lru_cache
 def get_pin_service() -> PinService:
-    return PinService()
+    return PinService(get_panel_service(), get_motion_planner())
 
 
 @lru_cache
@@ -59,4 +59,3 @@ def get_voice_service() -> VoiceService:
 @lru_cache
 def get_hardware_service() -> HardwareService:
     return HardwareService()
-
