@@ -25,7 +25,7 @@ services:
     environment:
       ROBOT_URDF_PATH: /app/6_dof_arm.urdf
       ROBOT_PANEL_CONFIG_PATH: /app/key.config.json
-      ROBOT_IK_TOLERANCE_M: "0.005"
+      ROBOT_IK_TOLERANCE_M: "0.001"
     volumes:
       - ./backend/app:/app/backend/app:ro
       - ./6_dof_arm.urdf:/app/6_dof_arm.urdf:ro

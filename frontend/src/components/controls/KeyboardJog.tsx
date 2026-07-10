@@ -27,8 +27,9 @@ const AXIS_KEYS: Record<string, { axis: 'x' | 'y' | 'z'; sign: 1 | -1 }> = {
 const FINE_SCALE = 0.3; // Shift held = finer step
 
 function isTypingTarget(target: EventTarget | null): boolean {
-  const tag = (target as HTMLElement | null)?.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA';
+  const element = target as HTMLElement | null;
+  const tag = element?.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || element?.isContentEditable === true;
 }
 
 export default function KeyboardJog() {
@@ -60,6 +61,10 @@ export default function KeyboardJog() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target)) return;
       fine.current = e.shiftKey;
+      if (e.key === 'Shift') {
+        recompute();
+        return;
+      }
       if (!AXIS_KEYS[e.code]) return;
       e.preventDefault();
       held.current.add(e.code);
@@ -68,6 +73,10 @@ export default function KeyboardJog() {
 
     const onKeyUp = (e: KeyboardEvent) => {
       fine.current = e.shiftKey;
+      if (e.key === 'Shift') {
+        recompute();
+        return;
+      }
       if (!AXIS_KEYS[e.code]) return;
       held.current.delete(e.code);
       recompute();

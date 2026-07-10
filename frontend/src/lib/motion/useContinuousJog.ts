@@ -19,14 +19,14 @@
  * still overlap *each other's* requests, which defeats the point.
  */
 
-import { useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useMotionStore } from './store';
 import type { Vec3 } from './commands';
 
 /** Tick rate for continuous jog dispatch. */
 export const JOG_TICK_MS = 80;
 /** Max jog speed at full stick/key deflection, mm/s. */
-export const MAX_JOG_MM_S = 60;
+export const MAX_JOG_MM_S = 180;
 /** Per-tick delta at full deflection, meters. */
 export const MAX_JOG_DELTA_M = (MAX_JOG_MM_S / 1000) * (JOG_TICK_MS / 1000);
 
@@ -37,13 +37,44 @@ let currentVector: Vec3 = ZERO;
 let inFlight = false;
 let intervalId: ReturnType<typeof setInterval> | null = null;
 let subscribers = 0;
+let gestureActive = false;
+
+function vectorMagnitude(v: Vec3): number {
+  return Math.hypot(v.x, v.y, v.z);
+}
+
+function hasInput(v: Vec3): boolean {
+  return vectorMagnitude(v) >= EPSILON;
+}
+
+function beginGesture() {
+  if (gestureActive) return;
+  gestureActive = true;
+  useMotionStore.getState().beginContinuousJog();
+}
+
+function endGestureIfIdle() {
+  if (!gestureActive || inFlight || hasInput(currentVector)) return;
+  gestureActive = false;
+  useMotionStore.getState().endContinuousJog();
+}
+
+function updateVector(unit: Vec3) {
+  currentVector = unit;
+  if (hasInput(unit)) {
+    beginGesture();
+  } else {
+    endGestureIfIdle();
+  }
+}
 
 function tick() {
   if (inFlight) return; // previous jog request still in flight — skip this tick
   const v = currentVector;
-  const mag = Math.hypot(v.x, v.y, v.z);
+  const mag = vectorMagnitude(v);
   if (mag < EPSILON) return;
 
+  beginGesture();
   const clamped = Math.min(1, mag);
   const scale = (clamped / mag) * MAX_JOG_DELTA_M;
   const delta: Vec3 = { x: v.x * scale, y: v.y * scale, z: v.z * scale };
@@ -51,9 +82,10 @@ function tick() {
   inFlight = true;
   void useMotionStore
     .getState()
-    .dispatch({ type: 'jog_cartesian', delta, frame: 'world' })
+    .dispatch({ type: 'jog_cartesian', delta, frame: 'world', continuous: true })
     .finally(() => {
       inFlight = false;
+      endGestureIfIdle();
     });
 }
 
@@ -69,7 +101,7 @@ function releaseTicker() {
   if (subscribers === 0 && intervalId != null) {
     clearInterval(intervalId);
     intervalId = null;
-    currentVector = ZERO;
+    updateVector(ZERO);
   }
 }
 
@@ -84,9 +116,9 @@ export function useContinuousJog(): ContinuousJogController {
     return () => releaseTicker();
   }, []);
 
-  return {
-    setVector: (unit) => {
-      currentVector = unit;
-    },
-  };
+  const setVector = useCallback((unit: Vec3) => {
+    updateVector(unit);
+  }, []);
+
+  return useMemo(() => ({ setVector }), [setVector]);
 }

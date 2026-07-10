@@ -112,6 +112,24 @@ def test_motion_planner_jog_uses_full_vector_delta() -> None:
     assert abs(response.tip["z"] - (current_tip.tip["z"] + delta.z)) <= 0.005
 
 
+def test_motion_planner_jog_moves_for_continuous_tick_sized_delta() -> None:
+    planner = get_motion_planner()
+    current = planner.model.neutral_pose()
+    before = planner.solve_target(Vector3(x=0.0, y=0.0, z=1.497), current)
+    assert before.success
+    assert before.joints is not None
+    assert before.tip is not None
+
+    delta = Vector3(x=0.0048, y=0.0, z=0.0)
+    response = planner.jog(before.joints, delta)
+
+    assert response.success, response.reason
+    assert response.tip is not None
+    assert response.error_meters is not None
+    assert response.error_meters <= 0.001
+    assert response.tip["x"] > before.tip["x"] + 0.003
+
+
 def test_robot_urdf_endpoint_serves_source_model() -> None:
     response = asyncio.run(_request("GET", "/api/robot/urdf"))
 

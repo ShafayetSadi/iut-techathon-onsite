@@ -60,6 +60,7 @@ export interface MotionState {
   status: Status;
   log: LogEntry[];
   robotReady: boolean;
+  continuousJogActive: boolean;
   /**
    * Interactive affordance: loosen manual jogging past URDF limits. The
    * deterministic safety gate in validate.ts still enforces limits on every
@@ -73,6 +74,7 @@ export interface MotionState {
     commandId: string,
     response: IkResponse,
     successLog: string,
+    options?: { animateTrajectory?: boolean },
   ) => Promise<MotionResult>;
 
   // ── low-level setters used by the render loop / UI ───────────────────
@@ -85,6 +87,8 @@ export interface MotionState {
   setTarget: (p: Vec3 | null) => void;
   setMode: (mode: Mode) => void;
   setStatus: (status: Status) => void;
+  beginContinuousJog: () => void;
+  endContinuousJog: () => void;
   setRobotReady: (ready: boolean) => void;
   setIgnoreLimits: (ignore: boolean) => void;
   pushLog: (text: string, level?: LogLevel) => void;
@@ -115,6 +119,7 @@ export const useMotionStore = create<MotionState>((set, get) => ({
   status: 'ready',
   log: [{ t: Date.now(), text: 'System initialized. Awaiting URDF…', level: 'info' }],
   robotReady: false,
+  continuousJogActive: false,
   ignoreLimits: false,
 
   dispatch: async (cmd) => {
@@ -122,7 +127,7 @@ export const useMotionStore = create<MotionState>((set, get) => ({
     const gate = validateCommand(cmd);
     if (!gate.ok) {
       get().pushLog(`Rejected ${cmd.type}: ${gate.reason}`, 'error');
-      set({ status: 'error' });
+      set({ status: 'error', continuousJogActive: false });
       return { commandId, ok: false, error: gate.error, reason: gate.reason };
     }
 
@@ -141,7 +146,7 @@ export const useMotionStore = create<MotionState>((set, get) => ({
         break;
       }
       case 'stop': {
-        set({ status: 'ready', mode: 'idle' });
+        set({ status: 'ready', mode: 'idle', continuousJogActive: false });
         break;
       }
       case 'move_to': {
@@ -153,7 +158,9 @@ export const useMotionStore = create<MotionState>((set, get) => ({
         set({ mode: 'jog', status: 'moving' });
         const response = await jogCartesian(cmd.delta, get().jointAngles);
         const mag = Math.hypot(cmd.delta.x, cmd.delta.y, cmd.delta.z) * 1000;
-        return await get().applyIkResponse(commandId, response, `Jogged ${mag.toFixed(1)} mm.`);
+        return await get().applyIkResponse(commandId, response, `Jogged ${mag.toFixed(1)} mm.`, {
+          animateTrajectory: cmd.continuous !== true,
+        });
       }
       case 'touch_key': {
         const target = await getPanelKeyPosition(cmd.key);
@@ -178,14 +185,14 @@ export const useMotionStore = create<MotionState>((set, get) => ({
       default: {
         const reason = 'Motion command is not implemented yet.';
         get().pushLog(reason, 'error');
-        set({ status: 'error' });
+        set({ status: 'error', continuousJogActive: false });
         return { commandId, ok: false, error: 'unreachable', reason };
       }
       }
     } catch (err) {
       const reason = (err as Error).message || 'Backend motion command failed.';
       get().pushLog(reason, 'error');
-      set({ status: 'error' });
+      set({ status: 'error', continuousJogActive: false });
       return { commandId, ok: false, error: errorCodeFromReason(reason), reason };
     }
 
@@ -206,22 +213,29 @@ export const useMotionStore = create<MotionState>((set, get) => ({
     set({ jointAngles: next });
   },
 
-  applyIkResponse: async (commandId: string, response: IkResponse, successLog: string) => {
+  applyIkResponse: async (
+    commandId: string,
+    response: IkResponse,
+    successLog: string,
+    options = {},
+  ) => {
     if (!response.success || !response.joints) {
       const reason = response.reason || 'Backend IK solver could not reach the target.';
       get().pushLog(reason, 'error');
-      set({ status: 'error' });
+      set({ status: 'error', continuousJogActive: false });
       return { commandId, ok: false, error: errorCodeFromReason(reason), reason };
     }
 
-    const trajectory = response.trajectory ?? [];
+    const trajectory = options.animateTrajectory === false ? [] : response.trajectory ?? [];
     for (const point of trajectory) {
       get().setJoints(jointMapToArray(point.joints));
       if (trajectory.length > 1) await sleep(20);
     }
     get().setJoints(jointMapToArray(response.joints));
     if (response.tip) get().setEEPosition(response.tip);
-    set({ status: 'ready' });
+    if (!get().continuousJogActive) {
+      set({ status: 'ready' });
+    }
 
     const errorMm = response.errorMeters == null ? '' : ` error ${(response.errorMeters * 1000).toFixed(1)} mm`;
     get().pushLog(`${successLog}${errorMm}`, 'ok');
@@ -273,6 +287,16 @@ export const useMotionStore = create<MotionState>((set, get) => ({
   setTarget: (p) => set({ target: p }),
   setMode: (mode) => set({ mode }),
   setStatus: (status) => set({ status }),
+  beginContinuousJog: () => {
+    set({ continuousJogActive: true, mode: 'jog', status: 'moving' });
+  },
+  endContinuousJog: () => {
+    set((state) => ({
+      continuousJogActive: false,
+      mode: state.status === 'error' ? state.mode : 'idle',
+      status: state.status === 'error' ? state.status : 'ready',
+    }));
+  },
   setRobotReady: (ready) => set({ robotReady: ready }),
   setIgnoreLimits: (ignore) => {
     set({ ignoreLimits: ignore });

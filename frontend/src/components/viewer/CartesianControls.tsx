@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useMotionStore } from '@/lib/motion/store';
-import type { Vec3 } from '@/lib/motion/commands';
+import { useState } from "react";
+import { useMotionStore } from "@/lib/motion/store";
+import type { Vec3 } from "@/lib/motion/commands";
 
-const JOG_STEP_M = 0.02;
+const JOG_STEP_M = 0.25;
 
 function metersFromMm(value: string): number {
   const parsed = Number.parseFloat(value);
@@ -15,15 +15,15 @@ export default function CartesianControls() {
   const dispatch = useMotionStore((s) => s.dispatch);
   const eePosition = useMotionStore((s) => s.eePosition);
   const status = useMotionStore((s) => s.status);
-  const [target, setTarget] = useState({ x: '550', y: '-50', z: '50' });
+  const [target, setTarget] = useState({ x: "550", y: "-50", z: "50" });
 
-  const jog = (axis: 'x' | 'y' | 'z', delta: number) => {
+  const jog = (axis: "x" | "y" | "z", delta: number) => {
     void dispatch({
-      type: 'jog_cartesian',
+      type: "jog_cartesian",
       delta: {
-        x: axis === 'x' ? delta : 0,
-        y: axis === 'y' ? delta : 0,
-        z: axis === 'z' ? delta : 0,
+        x: axis === "x" ? delta : 0,
+        y: axis === "y" ? delta : 0,
+        z: axis === "z" ? delta : 0,
       },
     });
   };
@@ -34,7 +34,7 @@ export default function CartesianControls() {
       y: metersFromMm(target.y),
       z: metersFromMm(target.z),
     };
-    void dispatch({ type: 'move_to', target: next });
+    void dispatch({ type: "move_to", target: next });
   };
 
   const loadCurrent = () => {
@@ -48,33 +48,59 @@ export default function CartesianControls() {
   return (
     <div className="cartesian">
       <div className="cartesian__grid">
-        <button className="btn" type="button" onClick={() => jog('z', JOG_STEP_M)}>
+        <button
+          className="btn"
+          type="button"
+          onClick={() => jog("z", JOG_STEP_M)}
+        >
           Z+
         </button>
-        <button className="btn" type="button" onClick={() => jog('y', JOG_STEP_M)}>
+        <button
+          className="btn"
+          type="button"
+          onClick={() => jog("y", JOG_STEP_M)}
+        >
           Y+
         </button>
-        <button className="btn" type="button" onClick={() => jog('x', JOG_STEP_M)}>
+        <button
+          className="btn"
+          type="button"
+          onClick={() => jog("x", JOG_STEP_M)}
+        >
           X+
         </button>
-        <button className="btn" type="button" onClick={() => jog('z', -JOG_STEP_M)}>
+        <button
+          className="btn"
+          type="button"
+          onClick={() => jog("z", -JOG_STEP_M)}
+        >
           Z-
         </button>
-        <button className="btn" type="button" onClick={() => jog('y', -JOG_STEP_M)}>
+        <button
+          className="btn"
+          type="button"
+          onClick={() => jog("y", -JOG_STEP_M)}
+        >
           Y-
         </button>
-        <button className="btn" type="button" onClick={() => jog('x', -JOG_STEP_M)}>
+        <button
+          className="btn"
+          type="button"
+          onClick={() => jog("x", -JOG_STEP_M)}
+        >
           X-
         </button>
       </div>
 
       <div className="targetbox">
-        {(['x', 'y', 'z'] as const).map((axis) => (
+        {(["x", "y", "z"] as const).map((axis) => (
           <label className="targetbox__field" key={axis}>
             <span>{axis.toUpperCase()} mm</span>
             <input
               value={target[axis]}
-              onChange={(event) => setTarget((prev) => ({ ...prev, [axis]: event.target.value }))}
+              onChange={(event) =>
+                setTarget((prev) => ({ ...prev, [axis]: event.target.value }))
+              }
               inputMode="decimal"
             />
           </label>
@@ -82,7 +108,12 @@ export default function CartesianControls() {
       </div>
 
       <div className="controls__row">
-        <button className="btn btn--primary" type="button" onClick={moveTo} disabled={status === 'moving'}>
+        <button
+          className="btn btn--primary"
+          type="button"
+          onClick={moveTo}
+          disabled={status === "moving"}
+        >
           Solve IK
         </button>
         <button className="btn" type="button" onClick={loadCurrent}>
@@ -99,13 +130,13 @@ export function KeyTouchControls() {
 
   return (
     <div className="keypad">
-      {['1', '2', '3', '4', '5', '6'].map((key) => (
+      {["1", "2", "3", "4", "5", "6"].map((key) => (
         <button
           className="btn"
           key={key}
           type="button"
-          disabled={status === 'moving'}
-          onClick={() => void dispatch({ type: 'touch_key', key })}
+          disabled={status === "moving"}
+          onClick={() => void dispatch({ type: "touch_key", key })}
         >
           Key {key}
         </button>
@@ -113,4 +144,3 @@ export function KeyTouchControls() {
     </div>
   );
 }
-

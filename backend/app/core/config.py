@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     api_prefix: str = "/api"
     urdf_path: Path = Path("../6_dof_arm.urdf")
     panel_config_path: Path = Path("../key.config.json")
-    ik_tolerance_m: float = 0.005
+    ik_tolerance_m: float = 0.001
     ik_max_iterations: int = 300
     ik_damping: float = 0.04
     trajectory_steps: int = 30
