@@ -124,13 +124,23 @@ export default function RobotScene() {
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     key.shadow.camera.near = 0.1;
-    key.shadow.camera.far = 8;
-    const s = 1.6;
-    key.shadow.camera.left = -s;
-    key.shadow.camera.right = s;
-    key.shadow.camera.top = s;
-    key.shadow.camera.bottom = -s;
-    key.shadow.bias = -0.0004;
+    key.shadow.camera.far = 4;
+    // Frustum tightened to the arm's actual reach (was ±1.6m — mostly empty
+    // space around a ~0.15m-radius arm, which starved shadow-map resolution
+    // right where it mattered: the small sphere/cylinder joint hubs).
+    key.shadow.camera.left = -0.9;
+    key.shadow.camera.right = 0.9;
+    key.shadow.camera.top = 1.7;
+    key.shadow.camera.bottom = -0.1;
+    // Depth bias alone wasn't enough on the curved, overlapping joint-hub
+    // geometry (sphere hub flush against cylinder link) — it self-shadowed
+    // in a banded/hatched pattern ("shadow acne"). normalBias offsets the
+    // sample along the surface normal instead of view depth, which is the
+    // correct fix for acne on curved surfaces.
+    key.shadow.bias = -0.0015;
+    key.shadow.normalBias = 0.015;
+    key.target.position.set(0, 0, 0.55);
+    scene.add(key.target);
     scene.add(key);
 
     // ── Ground + grid (XY plane at z=0 in the Z-up world) ─────────────────
