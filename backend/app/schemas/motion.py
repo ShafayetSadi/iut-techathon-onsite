@@ -6,6 +6,7 @@ from app.schemas.common import Vector3
 class IKSolveRequest(BaseModel):
     target: Vector3
     current_joints: dict[str, float] | None = Field(default=None, alias="currentJoints")
+    tolerance_meters: float | None = Field(default=None, alias="toleranceMeters")
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 

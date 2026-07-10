@@ -43,16 +43,8 @@ export default function ViewerControls() {
 
       <div className="controls__group">
         <div className="controls__grouplabel">Behavior</div>
-        <div className="controls__grid">
+        <div className="controls__grid controls__grid--single">
           <Toggle label="Auto-rotate" k="autoRotate" />
-          <button
-            className={`toggle ${ignoreLimits ? 'toggle--on' : ''}`}
-            onClick={() => setIgnoreLimits(!ignoreLimits)}
-            type="button"
-          >
-            <span className="toggle__dot" />
-            Ignore limits
-          </button>
         </div>
       </div>
 
@@ -81,6 +73,19 @@ export default function ViewerControls() {
           ⌂ Home arm
         </button>
       </div>
+
+      <details className="controls__advanced">
+        <summary className="controls__advanced-head">Advanced</summary>
+        <button
+          className={`toggle ${ignoreLimits ? 'toggle--on' : ''}`}
+          onClick={() => setIgnoreLimits(!ignoreLimits)}
+          title="Diagnostic only: widens manual drag and slider bounds. Motion commands still pass through validation."
+          type="button"
+        >
+          <span className="toggle__dot" />
+          Widen sliders
+        </button>
+      </details>
 
       <p className="controls__hint">
         Drag a joint in the 3D view to rotate it · drag empty space to orbit · scroll to zoom

@@ -149,4 +149,66 @@ describe('motion store safety dispatch', () => {
       vi.useRealTimers();
     }
   });
+
+  it('sends the ±5 mm touch tolerance for manual key presses', async () => {
+    vi.mocked(backend.getPanelKeyPosition).mockResolvedValue({ x: 0.5, y: 0.05, z: 0.05 });
+    vi.mocked(backend.solveIk).mockResolvedValue({
+      success: true,
+      joints: { joint_1: 0.1 },
+      tip: { x: 0.5, y: 0.05, z: 0.05 },
+      errorMeters: 0.004,
+      trajectory: [],
+    });
+
+    const result = await useMotionStore.getState().dispatch({ type: 'touch_key', key: '1' });
+
+    expect(result.ok).toBe(true);
+    expect(backend.solveIk).toHaveBeenCalledWith(
+      { x: 0.5, y: 0.05, z: 0.05 },
+      expect.any(Array),
+      { toleranceMeters: 0.005 },
+    );
+  });
+
+  it('replays each PIN step trajectory once, without a duplicate retract', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(backend.runPinSequence).mockResolvedValue({
+        success: true,
+        pin: '111111',
+        message: 'PIN 111111 planned successfully.',
+        plannedDigits: ['1'],
+        toleranceMeters: 0.005,
+        approachOffsetMeters: 0.03,
+        steps: [
+          {
+            index: 1,
+            digit: '1',
+            keyPosition: { x: 0.5, y: 0.05, z: 0.05 },
+            approachTarget: { x: 0.5, y: 0.05, z: 0.08 },
+            touchTarget: { x: 0.5, y: 0.05, z: 0.05 },
+            retractTarget: { x: 0.5, y: 0.05, z: 0.08 },
+            touchErrorMeters: 0.001,
+            pressed: true,
+            trajectory: [
+              { timeMs: 0, joints: { joint_1: 0.1 }, tip: { x: 0, y: 0, z: 0 } },
+              { timeMs: 0, joints: { joint_1: 0.2 }, tip: { x: 0, y: 0, z: 0 } },
+              { timeMs: 0, joints: { joint_1: 0.3 }, tip: { x: 0, y: 0, z: 0 } },
+            ],
+            message: 'Pressed key 1: error 1.0mm',
+          },
+        ],
+      });
+
+      const motion = useMotionStore.getState().dispatch({ type: 'enter_pin', pin: '111111' });
+      await vi.runAllTimersAsync();
+      const result = await motion;
+
+      expect(result.ok).toBe(true);
+      expect(useMotionStore.getState().jointAngles[0]).toBe(0.3);
+      expect(useMotionStore.getState().log.filter((entry) => entry.text === 'Retract key 1.')).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

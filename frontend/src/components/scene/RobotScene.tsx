@@ -27,7 +27,13 @@ import { applyJoints, forwardKinematics } from '@/lib/robot/robotAdapter';
 import { loadKeyConfig, toPanelKeys } from '@/lib/panel/keyConfig';
 import { useMotionStore } from '@/lib/motion/store';
 import { useViewerStore } from '@/lib/viewer/viewerStore';
-import { JOINT_NAMES, TOUCH_TOLERANCE_M } from '@/config/robot.config';
+import {
+  JOINT_NAMES,
+  TOUCH_TOLERANCE_M,
+  WORKSPACE_MAX_Z_M,
+  WORKSPACE_MIN_Z_M,
+  WORKSPACE_RADIUS_M,
+} from '@/config/robot.config';
 
 const HIGHLIGHT = new THREE.Color('#d97757'); // clay accent, matches the UI chrome
 const KEY_COLOR = new THREE.Color('#7fa1c4');
@@ -42,6 +48,8 @@ const KEY_PRESS_TRAVEL_M = 0.004;
 const PANEL_PLATE_HEIGHT_M = 0.008;
 const PANEL_MARGIN_M = 0.05;
 const LABEL_OFFSET_M = 0.03;
+const WORKSPACE_GUIDE_COLOR = new THREE.Color('#7fa1c4');
+const WORKSPACE_LIMIT_COLOR = new THREE.Color('#d3a75c');
 
 type KeyVisualStatus = 'idle' | 'moving' | 'pressed';
 
@@ -165,6 +173,51 @@ function createGroundXYLegend(): THREE.Group {
   return group;
 }
 
+function createWorkspaceGuide(): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'workspace-guide';
+
+  const height = WORKSPACE_MAX_Z_M - WORKSPACE_MIN_Z_M;
+  const midZ = WORKSPACE_MIN_Z_M + height / 2;
+
+  const shell = new THREE.Mesh(
+    new THREE.CylinderGeometry(WORKSPACE_RADIUS_M, WORKSPACE_RADIUS_M, height, 96, 6, true),
+    new THREE.MeshBasicMaterial({
+      color: WORKSPACE_GUIDE_COLOR,
+      transparent: true,
+      opacity: 0.12,
+      wireframe: true,
+      depthWrite: false,
+    }),
+  );
+  shell.rotation.x = Math.PI / 2;
+  shell.position.z = midZ;
+  shell.renderOrder = 1;
+  group.add(shell);
+
+  const makeRing = (z: number, color: THREE.Color, opacity: number) => {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(WORKSPACE_RADIUS_M - 0.006, WORKSPACE_RADIUS_M + 0.006, 128),
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    ring.position.z = z;
+    ring.renderOrder = 2;
+    return ring;
+  };
+
+  group.add(makeRing(0, WORKSPACE_GUIDE_COLOR, 0.34));
+  group.add(makeRing(WORKSPACE_MIN_Z_M, WORKSPACE_LIMIT_COLOR, 0.28));
+  group.add(makeRing(WORKSPACE_MAX_Z_M, WORKSPACE_LIMIT_COLOR, 0.28));
+
+  return group;
+}
+
 const LEGEND_AXIS_LEN = 0.82;
 
 function makeLabelSprite(text: string): THREE.Sprite {
@@ -279,6 +332,7 @@ export default function RobotScene() {
     scene.add(grid);
 
     scene.add(createGroundXYLegend());
+    scene.add(createWorkspaceGuide());
 
     // ── Markers that live outside the robot ──────────────────────────────
     const eeMarker = new THREE.Mesh(

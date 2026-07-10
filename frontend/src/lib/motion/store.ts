@@ -294,7 +294,7 @@ export const useMotionStore = create<MotionState>((set, get) => ({
         case "touch_key": {
           const target = await getPanelKeyPosition(cmd.key);
           set({ mode: "auto", status: "moving", target });
-          const response = await solveIk(target, get().jointAngles);
+          const response = await solveIk(target, get().jointAngles, { toleranceMeters: 0.005 });
           return await get().applyIkResponse(
             commandId,
             response,
@@ -414,18 +414,6 @@ export const useMotionStore = create<MotionState>((set, get) => ({
               `Pressed key ${step.digit}: error ${errorMm == null ? "n/a" : errorMm.toFixed(1)} mm.`,
               "ok",
             );
-
-            get().pushLog(`Retract key ${step.digit}.`, "info");
-            set({ target: step.retractTarget });
-            for (const point of retractTrajectory) {
-              if (get().autoRunId !== runId) {
-                const reason = "Autonomous sequence cancelled.";
-                get().pushLog(reason, "error");
-                return { commandId, ok: false, error: "cancelled", reason };
-              }
-              get().setJoints(jointMapToArray(point.joints));
-              await sleep(18);
-            }
           }
 
           if (!response.success) {

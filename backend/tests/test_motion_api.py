@@ -34,6 +34,24 @@ def test_ik_solve_endpoint_for_panel_key() -> None:
     assert len(payload["trajectory"]) >= 2
 
 
+def test_ik_solve_endpoint_accepts_manual_touch_tolerance_override() -> None:
+    response = asyncio.run(
+        _request(
+            "POST",
+            "/api/ik/solve",
+            json={
+                "target": {"x": 0.55, "y": -0.05, "z": 0.05},
+                "toleranceMeters": 0.005,
+            },
+        )
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["errorMeters"] <= 0.005
+
+
 def test_motion_jog_endpoint_accepts_vector_delta() -> None:
     model = asyncio.run(_request("GET", "/api/robot/model")).json()
     response = asyncio.run(
