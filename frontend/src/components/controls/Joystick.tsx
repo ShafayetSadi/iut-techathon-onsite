@@ -21,7 +21,7 @@ const KNOB_SIZE = 52; // px
 const MAX_OFFSET = (BASE_SIZE - KNOB_SIZE) / 2; // px the knob can travel from center
 const DEADZONE = 0.15; // fraction of MAX_OFFSET below which input is ignored
 
-const Z_SLIDER_HEIGHT = 132; // px — match XY pad height
+const Z_SLIDER_HEIGHT = 108; // px — room for Z up/down buttons
 const Z_THUMB_SIZE = 22; // px
 const Z_MAX_OFFSET = (Z_SLIDER_HEIGHT - Z_THUMB_SIZE) / 2;
 const Z_DEADZONE = 0.12;
@@ -56,6 +56,7 @@ export default function Joystick() {
   const activePointer = useRef<number | null>(null);
   const zActivePointer = useRef<number | null>(null);
   const arrowHeld = useRef<ArrowDir | null>(null);
+  const zButtonHeld = useRef<'up' | 'down' | null>(null);
   const xy = useRef<Vec3>({ x: 0, y: 0, z: 0 });
   const z = useRef(0);
 
@@ -63,6 +64,7 @@ export default function Joystick() {
   const [dragging, setDragging] = useState(false);
   const [zThumbOffset, setZThumbOffset] = useState(0);
   const [zDragging, setZDragging] = useState(false);
+  const [zButtonActive, setZButtonActive] = useState<'up' | 'down' | null>(null);
   const [arrowActive, setArrowActive] = useState<ArrowDir | null>(null);
 
   const publish = () => {
@@ -153,6 +155,31 @@ export default function Joystick() {
     holdArrow(null);
   };
 
+  const holdZButton = (dir: 'up' | 'down' | null) => {
+    zButtonHeld.current = dir;
+    setZButtonActive(dir);
+    if (zDragging) return;
+    if (!dir) {
+      z.current = 0;
+      setZThumbOffset(0);
+    } else {
+      z.current = dir === 'up' ? 1 : -1;
+      setZThumbOffset(dir === 'up' ? -Z_MAX_OFFSET * 0.55 : Z_MAX_OFFSET * 0.55);
+    }
+    publish();
+  };
+
+  const onZButtonPointerDown = (dir: 'up' | 'down') => (e: ReactPointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    holdZButton(dir);
+  };
+
+  const onZButtonPointerUp = (dir: 'up' | 'down') => (e: ReactPointerEvent<HTMLButtonElement>) => {
+    if (zButtonHeld.current !== dir) return;
+    holdZButton(null);
+  };
+
   const updateZFromClient = (clientY: number) => {
     const slider = zSliderRef.current;
     if (!slider) return;
@@ -176,6 +203,7 @@ export default function Joystick() {
   };
 
   const onZPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    holdZButton(null);
     e.currentTarget.setPointerCapture(e.pointerId);
     zActivePointer.current = e.pointerId;
     setZDragging(true);
@@ -191,9 +219,13 @@ export default function Joystick() {
     if (zActivePointer.current !== e.pointerId) return;
     zActivePointer.current = null;
     setZDragging(false);
-    setZThumbOffset(0);
-    z.current = 0;
-    publish();
+    if (zButtonHeld.current) {
+      holdZButton(zButtonHeld.current);
+    } else {
+      setZThumbOffset(0);
+      z.current = 0;
+      publish();
+    }
   };
 
   useEffect(() => () => setVector({ x: 0, y: 0, z: 0 }), [setVector]);
@@ -245,6 +277,17 @@ export default function Joystick() {
 
         <div className="joystick__zwrap">
           <span className="joystick__zlabel">Z</span>
+          <button
+            type="button"
+            className={`joystick__zbtn ${zButtonActive === 'up' ? 'joystick__zbtn--active' : ''}`}
+            aria-label="Jog Z positive"
+            onPointerDown={onZButtonPointerDown('up')}
+            onPointerUp={onZButtonPointerUp('up')}
+            onPointerCancel={onZButtonPointerUp('up')}
+            onPointerLeave={onZButtonPointerUp('up')}
+          >
+            <span className="joystick__zbtn-icon joystick__zbtn-icon--up" aria-hidden="true" />
+          </button>
           <div
             ref={zSliderRef}
             className={`joystick__zslider ${zDragging ? 'joystick__zslider--active' : ''}`}
@@ -266,9 +309,20 @@ export default function Joystick() {
               }}
             />
           </div>
+          <button
+            type="button"
+            className={`joystick__zbtn ${zButtonActive === 'down' ? 'joystick__zbtn--active' : ''}`}
+            aria-label="Jog Z negative"
+            onPointerDown={onZButtonPointerDown('down')}
+            onPointerUp={onZButtonPointerUp('down')}
+            onPointerCancel={onZButtonPointerUp('down')}
+            onPointerLeave={onZButtonPointerUp('down')}
+          >
+            <span className="joystick__zbtn-icon joystick__zbtn-icon--down" aria-hidden="true" />
+          </button>
         </div>
       </div>
-      <div className="joystick__label">Drag or use arrows for XY · slide Z · world frame</div>
+      <div className="joystick__label">Drag or use arrows for XY · buttons or slide for Z · world frame</div>
     </div>
   );
 }
