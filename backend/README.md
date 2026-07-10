@@ -32,7 +32,9 @@ The backend will be available at `http://localhost:8000`.
   frontend motion pipeline.
 - `GET /api/panel/keys` - fixed test-panel key coordinates from `key.config.json`.
 - `POST /api/pin/sequence` - Phase 4 sequencing scaffold.
-- `POST /api/voice/command` - Phase 3 deterministic voice-command scaffold.
+- `POST /api/voice/transcribe` - Phase 3 speech-to-text proxy.
+- `POST /api/agent/interpret` - Phase 3B semantic decomposition, deterministic
+  compilation, and whole-plan motion preflight.
 - `GET /api/hardware/schematic` - Phase 5 schematic checklist scaffold.
 - `WS /ws/state` - live state/event stream for the frontend.
 
@@ -44,3 +46,26 @@ uv run python scripts/smoke_ik.py
 ```
 
 This solves IK for all six panel keys and prints the final stylus-tip error.
+
+## OpenRouter Agent Configuration
+
+Copy the Phase 3B variables from `.env.example` into `backend/.env`. Set an
+OpenRouter API key and a model that supports both tool calling and strict
+structured output:
+
+```bash
+ROBOT_OPENROUTER_API_KEY=...
+ROBOT_OPENROUTER_MODEL=google/gemini-2.5-flash-lite
+```
+
+`service.py` sends `provider.require_parameters`, so OpenRouter drops any
+upstream provider that does not advertise `tools` *and* `structured_outputs`.
+Check a candidate model before switching:
+
+```bash
+curl -s https://openrouter.ai/api/v1/models | jq '.data[] | select(.id=="<model>") | .supported_parameters'
+```
+
+The key stays in the FastAPI service. Deterministic voice matches never call
+OpenRouter; only unmatched, ambiguous, and clarification transcripts use the
+agent endpoint.

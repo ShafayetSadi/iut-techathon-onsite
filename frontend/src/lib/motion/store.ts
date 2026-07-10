@@ -71,8 +71,9 @@ export interface MotionState {
   autoError: string | null;
   autoRunId: number;
   ignoreLimits: boolean;
+  agentExecutionToken: string | null;
 
-  dispatch: (cmd: MotionCommand) => Promise<MotionResult>;
+  dispatch: (cmd: MotionCommand, context?: { agentToken?: string }) => Promise<MotionResult>;
   applyIkResponse: (
     commandId: string,
     response: IkResponse,
@@ -94,6 +95,8 @@ export interface MotionState {
   endContinuousJog: () => void;
   setRobotReady: (ready: boolean) => void;
   setIgnoreLimits: (ignore: boolean) => void;
+  acquireAgentExecution: (token: string) => void;
+  releaseAgentExecution: (token: string) => void;
   pushLog: (text: string, level?: LogLevel) => void;
   clearLog: () => void;
 }
@@ -183,9 +186,16 @@ export const useMotionStore = create<MotionState>((set, get) => ({
   autoError: null,
   autoRunId: 0,
   ignoreLimits: false,
+  agentExecutionToken: null,
 
-  dispatch: async (cmd) => {
+  dispatch: async (cmd, context = {}) => {
     const commandId = nextCommandId();
+    const agentToken = get().agentExecutionToken;
+    if (agentToken && context.agentToken !== agentToken && cmd.type !== "stop") {
+      const reason = "Agent sequence is running.";
+      get().pushLog(reason, "error");
+      return { commandId, ok: false, error: "cancelled", reason };
+    }
     const gate = validateCommand(cmd);
     if (!gate.ok) {
       get().pushLog(`Rejected ${cmd.type}: ${gate.reason}`, "error");
@@ -457,9 +467,14 @@ export const useMotionStore = create<MotionState>((set, get) => ({
         }
         case "sequence": {
           set({ mode: "auto", status: "moving" });
-          for (const step of cmd.steps) {
-            const result = await get().dispatch(step);
-            if (!result.ok) return result;
+          for (const [index, step] of cmd.steps.entries()) {
+            const result = await get().dispatch(step, context);
+            if (!result.ok) {
+              return {
+                ...result,
+                reason: `Step ${index + 1} failed: ${result.reason ?? result.error}`,
+              };
+            }
           }
           set({ status: "ready" });
           return {
@@ -625,6 +640,10 @@ export const useMotionStore = create<MotionState>((set, get) => ({
   setIgnoreLimits: (ignore) => {
     set({ ignoreLimits: ignore });
     if (!ignore) get().setJoints(get().jointAngles);
+  },
+  acquireAgentExecution: (token) => set({ agentExecutionToken: token }),
+  releaseAgentExecution: (token) => {
+    if (get().agentExecutionToken === token) set({ agentExecutionToken: null });
   },
 
   pushLog: (text, level = "info") => {

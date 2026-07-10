@@ -25,11 +25,48 @@ function pct(confidence: number | undefined): string {
 function toneOf(entry: TranscriptEntry): string {
   if (entry.status === 'pending') return 'pending';
   if (entry.status === 'error') return 'unmatched';
+  if (entry.agentResult?.status === 'ready') return 'matched';
+  if (entry.agentResult?.status === 'needs_clarification') return 'ambiguous';
+  if (entry.agentResult?.status === 'rejected') return 'unmatched';
   return entry.resolution?.status ?? 'unmatched';
 }
 
 function Detail({ entry }: { entry: TranscriptEntry }) {
   if (entry.status !== 'final' || !entry.resolution) return null;
+  if (entry.agentResult) {
+    const agent = entry.agentResult;
+    return (
+      <div className="transcript__detail transcript__detail--agent">
+        <span className="transcript__cmd">agent · {agent.confirmation}</span>
+        <ol className="transcript__steps">
+          {agent.steps.map((step) => (
+            <li key={step.id}>
+              <span>{step.intent}</span>
+              <small>{entry.result?.ok ? 'completed' : step.status} · {step.analysis}</small>
+            </li>
+          ))}
+        </ol>
+        {agent.clarifyingQuestion && (
+          <span className="transcript__gate transcript__gate--blocked">
+            asking · {agent.clarifyingQuestion}
+          </span>
+        )}
+        {agent.failureReason && (
+          <span className="transcript__gate transcript__gate--blocked">
+            rejected · {agent.failureReason}
+          </span>
+        )}
+        {entry.result && (
+          <span className={`transcript__gate transcript__gate--${entry.result.ok ? 'ok' : 'blocked'}`}>
+            {entry.result.ok ? 'operation completed successfully' : `failed · ${entry.result.reason ?? entry.result.error}`}
+          </span>
+        )}
+        {entry.skipped && (
+          <span className="transcript__gate transcript__gate--blocked">skipped · {entry.skipped}</span>
+        )}
+      </div>
+    );
+  }
   const { status, command, template, confidence, alternatives, reason, gate } = entry.resolution;
 
   if (status === 'matched' && command) {

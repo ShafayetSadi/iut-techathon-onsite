@@ -11,21 +11,52 @@
  * discrete one-shot.
  */
 
-import { useCallback } from 'react';
+import { useCallback, useState, type FormEvent } from 'react';
 import { useMotionStore } from '@/lib/motion/store';
 import { executeVoiceCommand } from '@/lib/voice/execute';
 import { useSpeechCapture } from '@/lib/voice/useSpeechCapture';
 import { useVoiceStore } from '@/lib/voice/voiceStore';
 import { transcribeClip } from '@/lib/voice/voiceApi';
+import { describeOutcome, speak } from '@/lib/voice/speak';
 
-const EXAMPLES = ['move up', 'move forward 5 cm', 'set shoulder to 30 degrees', 'press key 3', 'home'];
+const EXAMPLES = [
+  'move up',
+  'move forward 5 cm',
+  'set shoulder to 30 degrees',
+  'press key 3',
+  'home',
+  'nudge the tip toward the panel and tap 5 twice',
+];
 
 export default function VoiceControls() {
+  const [typedCommand, setTypedCommand] = useState('');
   const beginTranscript = useVoiceStore((s) => s.beginTranscript);
   const resolveTranscript = useVoiceStore((s) => s.resolveTranscript);
   const attachResult = useVoiceStore((s) => s.attachResult);
   const failTranscript = useVoiceStore((s) => s.failTranscript);
   const setRecording = useVoiceStore((s) => s.setRecording);
+
+  const runTranscript = useCallback(
+    async (id: string, transcript: string) => {
+      const voice = useVoiceStore.getState();
+      const pendingPlan = voice.getPendingPlan();
+      const resolution = resolveTranscript(id, transcript);
+      const outcome = await executeVoiceCommand(resolution, { transcript, pendingPlan });
+      attachResult(id, outcome);
+
+      // The browser boundary lives here, not in `execute.ts` — that module is a
+      // pure dispatcher tested under node, with no `window` to stub.
+      const spoken = describeOutcome(outcome);
+      if (spoken) speak(spoken);
+
+      if (outcome.agentResult?.status === 'needs_clarification' && outcome.agentResult.pendingPlan) {
+        voice.setPendingPlan(outcome.agentResult.pendingPlan);
+      } else if (outcome.clearPending) {
+        voice.clearPendingPlan();
+      }
+    },
+    [attachResult, resolveTranscript],
+  );
 
   const handleClip = useCallback(
     async (clip: Blob, filename: string) => {
@@ -36,9 +67,7 @@ export default function VoiceControls() {
           failTranscript(id, 'Nothing was heard.');
           return;
         }
-        const resolution = resolveTranscript(id, transcript);
-        const outcome = await executeVoiceCommand(resolution);
-        attachResult(id, outcome);
+        await runTranscript(id, transcript);
       } catch (err) {
         failTranscript(id, (err as Error).message);
       } finally {
@@ -46,7 +75,7 @@ export default function VoiceControls() {
         motion.setMode(motion.continuousJogActive ? 'jog' : 'idle');
       }
     },
-    [beginTranscript, resolveTranscript, attachResult, failTranscript],
+    [beginTranscript, failTranscript, runTranscript],
   );
 
   const { start, stop, recording, error } = useSpeechCapture(handleClip);
@@ -74,6 +103,26 @@ export default function VoiceControls() {
     setRecording(false);
   }, [stop, setRecording]);
 
+  const submitTyped = useCallback(
+    async (event: FormEvent) => {
+      event.preventDefault();
+      const transcript = typedCommand.trim();
+      if (!transcript) return;
+      setTypedCommand('');
+      const id = beginTranscript();
+      useMotionStore.getState().setMode('voice');
+      try {
+        await runTranscript(id, transcript);
+      } catch (err) {
+        failTranscript(id, (err as Error).message);
+      } finally {
+        const motion = useMotionStore.getState();
+        motion.setMode(motion.continuousJogActive ? 'jog' : 'idle');
+      }
+    },
+    [beginTranscript, failTranscript, runTranscript, typedCommand],
+  );
+
   return (
     <div className="voice">
       <button
@@ -88,6 +137,19 @@ export default function VoiceControls() {
 
       {recording && <span className="pill pill--warn">recording</span>}
       {error && <p className="voice__error">{error}</p>}
+
+      <form className="voice__typed" onSubmit={submitTyped}>
+        <input
+          aria-label="Typed robot instruction"
+          className="voice__input"
+          value={typedCommand}
+          onChange={(event) => setTypedCommand(event.target.value)}
+          placeholder="Type an instruction"
+        />
+        <button className="btn btn--sm" type="submit" disabled={!typedCommand.trim()}>
+          Send
+        </button>
+      </form>
 
       <p className="voice__hint">
         Matched commands run through the same safety gate and motion pipeline.

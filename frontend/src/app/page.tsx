@@ -7,6 +7,7 @@ import JointReadout from '@/components/dashboard/JointReadout';
 import EEReadout from '@/components/dashboard/EEReadout';
 import EventLog from '@/components/dashboard/EventLog';
 import CommandInspector from '@/components/dashboard/CommandInspector';
+import TranscriptLog from '@/components/dashboard/TranscriptLog';
 
 const RobotScene = dynamic(() => import('@/components/scene/RobotScene'), {
   ssr: false,
@@ -38,6 +39,7 @@ export default function Home() {
           <h2 className="panel__h">Status</h2>
           <ModeStatus />
           <CommandInspector />
+          <TranscriptLog />
           <EEReadout />
           <JointReadout />
           <EventLog />
