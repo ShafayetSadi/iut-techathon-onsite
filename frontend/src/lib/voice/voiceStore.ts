@@ -11,7 +11,7 @@
  */
 
 import { create } from 'zustand';
-import type { MotionCommand } from '@/lib/motion/commands';
+import type { MotionCommand, MotionResult } from '@/lib/motion/commands';
 import { matchTranscript, type Resolution } from './matcher';
 
 export type TranscriptStatus = 'pending' | 'final' | 'error';
@@ -23,6 +23,8 @@ export interface TranscriptEntry {
   /** What the operator said, or the failure reason when `status` is 'error'. */
   text: string;
   resolution?: Resolution;
+  result?: MotionResult;
+  skipped?: string;
 }
 
 /** Enough history to scroll back through a demo, bounded so it cannot grow forever. */
@@ -43,6 +45,7 @@ export interface VoiceState {
   beginTranscript: () => string;
   /** Attach the recognized text and run it through the matcher. */
   resolveTranscript: (id: string, text: string) => Resolution;
+  attachResult: (id: string, outcome: { result?: MotionResult; skipped?: string }) => void;
   failTranscript: (id: string, reason: string) => void;
   clearTranscripts: () => void;
   setRecording: (recording: boolean) => void;
@@ -73,6 +76,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     const resolution = matchTranscript(text);
     set({ entries: replace(get().entries, id, { status: 'final', text, resolution }) });
     return resolution;
+  },
+
+  attachResult: (id, outcome) => {
+    set({ entries: replace(get().entries, id, outcome) });
   },
 
   failTranscript: (id, reason) => {

@@ -3,10 +3,8 @@
 /**
  * VoiceControls.tsx — push-to-talk capture. See docs/phase3-frontend-brief.md §3.
  *
- * This slice RESOLVES but does not EXECUTE. The matched command and the safety
- * gate's verdict are displayed; `dispatch()` is never called. Wiring execution
- * is one line once the matcher has been watched against real speech — see the
- * brief's §5.
+ * Matched commands execute through motionStore.dispatch after the matcher and
+ * deterministic safety gate accept them.
  *
  * Deliberately does not go through `useContinuousJog`: that dispatcher exists
  * for held-down input and keeps a shared in-flight gate. A spoken command is a
@@ -15,15 +13,17 @@
 
 import { useCallback } from 'react';
 import { useMotionStore } from '@/lib/motion/store';
+import { executeVoiceCommand } from '@/lib/voice/execute';
 import { useSpeechCapture } from '@/lib/voice/useSpeechCapture';
 import { useVoiceStore } from '@/lib/voice/voiceStore';
 import { transcribeClip } from '@/lib/voice/voiceApi';
 
-const EXAMPLES = ['move up', 'move forward 5 cm', 'rotate base 30 degrees', 'press key 3', 'home'];
+const EXAMPLES = ['move up', 'move forward 5 cm', 'set shoulder to 30 degrees', 'press key 3', 'home'];
 
 export default function VoiceControls() {
   const beginTranscript = useVoiceStore((s) => s.beginTranscript);
   const resolveTranscript = useVoiceStore((s) => s.resolveTranscript);
+  const attachResult = useVoiceStore((s) => s.attachResult);
   const failTranscript = useVoiceStore((s) => s.failTranscript);
   const setRecording = useVoiceStore((s) => s.setRecording);
 
@@ -36,12 +36,17 @@ export default function VoiceControls() {
           failTranscript(id, 'Nothing was heard.');
           return;
         }
-        resolveTranscript(id, transcript);
+        const resolution = resolveTranscript(id, transcript);
+        const outcome = await executeVoiceCommand(resolution);
+        attachResult(id, outcome);
       } catch (err) {
         failTranscript(id, (err as Error).message);
+      } finally {
+        const motion = useMotionStore.getState();
+        motion.setMode(motion.continuousJogActive ? 'jog' : 'idle');
       }
     },
-    [beginTranscript, resolveTranscript, failTranscript],
+    [beginTranscript, resolveTranscript, attachResult, failTranscript],
   );
 
   const { start, stop, recording, error } = useSpeechCapture(handleClip);
@@ -67,7 +72,6 @@ export default function VoiceControls() {
   const release = useCallback(() => {
     stop();
     setRecording(false);
-    useMotionStore.getState().setMode('idle');
   }, [stop, setRecording]);
 
   return (
@@ -86,7 +90,7 @@ export default function VoiceControls() {
       {error && <p className="voice__error">{error}</p>}
 
       <p className="voice__hint">
-        Resolves the command and shows the safety verdict. The arm does not move.
+        Matched commands run through the same safety gate and motion pipeline.
       </p>
       <ul className="voice__examples">
         {EXAMPLES.map((example) => (

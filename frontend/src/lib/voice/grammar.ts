@@ -56,6 +56,8 @@ export interface JointVocab {
   index: number;
   /** Spoken name. */
   word: string;
+  /** Extra normalized names the operator may say for the same joint. */
+  aliases: string[];
   /** Direction word meaning a POSITIVE joint delta. */
   positive: string;
   /** Direction word meaning a NEGATIVE joint delta. */
@@ -64,6 +66,15 @@ export interface JointVocab {
 
 /** Spoken name per joint, in canonical JOINTS order. */
 const SPOKEN_NAMES = ['base', 'shoulder', 'elbow', 'forearm', 'wrist', 'tool', 'stylus'];
+const SPOKEN_ALIASES = [
+  ['base yaw'],
+  ['shoulder pitch'],
+  ['elbow pitch'],
+  ['forearm roll'],
+  ['wrist pitch'],
+  ['tool roll'],
+  ['stylus pitch'],
+];
 
 /**
  * Derived from JOINTS so the two can never drift.
@@ -78,6 +89,7 @@ export const JOINT_VOCAB: JointVocab[] = JOINTS.map((joint, index) => {
   return {
     index,
     word: SPOKEN_NAMES[index],
+    aliases: SPOKEN_ALIASES[index] ?? [],
     positive: isYaw ? 'left' : 'down',
     negative: isYaw ? 'right' : 'up',
   };
@@ -104,6 +116,87 @@ function finite(params: number[], count: number): boolean {
   return params.length >= count && params.slice(0, count).every(Number.isFinite);
 }
 
+function jointIndexFromSpokenNumber(value: number): number | null {
+  if (!Number.isInteger(value) || value < 1 || value > JOINTS.length) return null;
+  return value - 1;
+}
+
+function addJointTemplates(templates: Template[], joint: JointVocab, name: string): void {
+  templates.push({
+    skeleton: `rotate ${name} {n} degrees`,
+    build: (params) =>
+      finite(params, 1)
+        ? { type: 'jog_joint', joint: joint.index, delta: params[0] * DEG_TO_RAD }
+        : null,
+  });
+
+  templates.push({
+    skeleton: `rotate ${name} to {n} degrees`,
+    build: (params) =>
+      finite(params, 1)
+        ? { type: 'set_joint', joint: joint.index, value: params[0] * DEG_TO_RAD }
+        : null,
+  });
+
+  for (const [word, sign] of [
+    [joint.positive, 1],
+    [joint.negative, -1],
+  ] as const) {
+    templates.push({
+      skeleton: `rotate ${name} ${word} {n} degrees`,
+      build: (params) =>
+        finite(params, 1)
+          ? { type: 'jog_joint', joint: joint.index, delta: sign * params[0] * DEG_TO_RAD }
+          : null,
+    });
+  }
+
+  templates.push({
+    skeleton: `set ${name} to {n} degrees`,
+    build: (params) =>
+      finite(params, 1)
+        ? { type: 'set_joint', joint: joint.index, value: params[0] * DEG_TO_RAD }
+        : null,
+  });
+
+  templates.push({
+    skeleton: `center ${name}`,
+    build: () => ({ type: 'set_joint', joint: joint.index, value: 0 }),
+  });
+}
+
+function addNumberedJointTemplates(templates: Template[], prefix: 'j' | 'j ' | 'joint '): void {
+  templates.push({
+    skeleton: `rotate ${prefix}{n} {n} degrees`,
+    build: (params) => {
+      if (!finite(params, 2)) return null;
+      const joint = jointIndexFromSpokenNumber(params[0]);
+      return joint == null ? null : { type: 'jog_joint', joint, delta: params[1] * DEG_TO_RAD };
+    },
+    domain: `joint number must be 1 to ${JOINTS.length}`,
+  });
+
+  templates.push({
+    skeleton: `rotate ${prefix}{n} to {n} degrees`,
+    build: (params) => {
+      if (!finite(params, 2)) return null;
+      const joint = jointIndexFromSpokenNumber(params[0]);
+      return joint == null ? null : { type: 'set_joint', joint, value: params[1] * DEG_TO_RAD };
+    },
+    domain: `joint number must be 1 to ${JOINTS.length}`,
+  });
+
+  templates.push({
+    skeleton: `set ${prefix}{n} to {n} degrees`,
+    build: (params) => {
+      if (!finite(params, 2)) return null;
+      const joint = jointIndexFromSpokenNumber(params[0]);
+      return joint == null ? null : { type: 'set_joint', joint, value: params[1] * DEG_TO_RAD };
+    },
+    domain: `joint number must be 1 to ${JOINTS.length}`,
+  });
+}
+
 function buildTemplates(): Template[] {
   const templates: Template[] = [];
 
@@ -128,40 +221,13 @@ function buildTemplates(): Template[] {
   }
 
   for (const joint of JOINT_VOCAB) {
-    templates.push({
-      skeleton: `rotate ${joint.word} {n} degrees`,
-      build: (params) =>
-        finite(params, 1)
-          ? { type: 'jog_joint', joint: joint.index, delta: params[0] * DEG_TO_RAD }
-          : null,
-    });
-
-    for (const [word, sign] of [
-      [joint.positive, 1],
-      [joint.negative, -1],
-    ] as const) {
-      templates.push({
-        skeleton: `rotate ${joint.word} ${word} {n} degrees`,
-        build: (params) =>
-          finite(params, 1)
-            ? { type: 'jog_joint', joint: joint.index, delta: sign * params[0] * DEG_TO_RAD }
-            : null,
-      });
+    for (const name of [joint.word, ...joint.aliases]) {
+      addJointTemplates(templates, joint, name);
     }
-
-    templates.push({
-      skeleton: `set ${joint.word} to {n} degrees`,
-      build: (params) =>
-        finite(params, 1)
-          ? { type: 'set_joint', joint: joint.index, value: params[0] * DEG_TO_RAD }
-          : null,
-    });
-
-    templates.push({
-      skeleton: `center ${joint.word}`,
-      build: () => ({ type: 'set_joint', joint: joint.index, value: 0 }),
-    });
   }
+
+  addNumberedJointTemplates(templates, 'j');
+  addNumberedJointTemplates(templates, 'joint ');
 
   const touchKey = (params: number[]): MotionCommand | null => {
     if (!finite(params, 1)) return null;

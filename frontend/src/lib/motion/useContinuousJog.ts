@@ -20,7 +20,7 @@
  */
 
 import { useCallback, useEffect, useMemo } from "react";
-import { useMotionStore } from "./store";
+import { registerJogCanceller, useMotionStore } from "./store";
 import type { Vec3 } from "./commands";
 
 /** Tick rate for continuous jog dispatch. */
@@ -68,6 +68,11 @@ function updateVector(unit: Vec3) {
   }
 }
 
+export function cancelContinuousJog() {
+  currentVector = ZERO;
+  gestureActive = false;
+}
+
 function tick() {
   if (inFlight) return; // previous jog request still in flight — skip this tick
   const v = currentVector;
@@ -101,13 +106,14 @@ function acquireTicker() {
   }
 }
 
-function releaseTicker() {
+function releaseTicker(): number {
   subscribers = Math.max(0, subscribers - 1);
   if (subscribers === 0 && intervalId != null) {
     clearInterval(intervalId);
     intervalId = null;
     updateVector(ZERO);
   }
+  return subscribers;
 }
 
 export interface ContinuousJogController {
@@ -117,8 +123,11 @@ export interface ContinuousJogController {
 
 export function useContinuousJog(): ContinuousJogController {
   useEffect(() => {
+    registerJogCanceller(cancelContinuousJog);
     acquireTicker();
-    return () => releaseTicker();
+    return () => {
+      if (releaseTicker() === 0) registerJogCanceller(null);
+    };
   }, []);
 
   const setVector = useCallback((unit: Vec3) => {

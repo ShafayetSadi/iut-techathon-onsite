@@ -23,7 +23,7 @@ import {
   type MotionResult,
   type Vec3,
 } from './commands';
-import { validateCommand } from './validate';
+import { validateCommand, withinJointLimit, withinWorkspace } from './validate';
 import {
   getPanelKeyPosition,
   jogCartesian,
@@ -61,6 +61,7 @@ export interface MotionState {
   log: LogEntry[];
   robotReady: boolean;
   continuousJogActive: boolean;
+  stopEpoch: number;
   /**
    * Interactive affordance: loosen manual jogging past URDF limits. The
    * deterministic safety gate in validate.ts still enforces limits on every
@@ -74,6 +75,7 @@ export interface MotionState {
     commandId: string,
     response: IkResponse,
     successLog: string,
+    epoch: number,
     options?: { animateTrajectory?: boolean },
   ) => Promise<MotionResult>;
 
@@ -96,9 +98,14 @@ export interface MotionState {
 }
 
 const MAX_LOG = 200;
+let jogCanceller: (() => void) | null = null;
+
+export function registerJogCanceller(fn: (() => void) | null): void {
+  jogCanceller = fn;
+}
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+  return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
 }
 
 function errorCodeFromReason(reason: string | undefined): MotionResult['error'] {
@@ -120,6 +127,7 @@ export const useMotionStore = create<MotionState>((set, get) => ({
   log: [{ t: Date.now(), text: 'System initialized. Awaiting URDF…', level: 'info' }],
   robotReady: false,
   continuousJogActive: false,
+  stopEpoch: 0,
   ignoreLimits: false,
 
   dispatch: async (cmd) => {
@@ -130,6 +138,7 @@ export const useMotionStore = create<MotionState>((set, get) => ({
       set({ status: 'error', continuousJogActive: false });
       return { commandId, ok: false, error: gate.error, reason: gate.reason };
     }
+    const epoch = get().stopEpoch;
 
     try {
       switch (cmd.type) {
@@ -138,6 +147,13 @@ export const useMotionStore = create<MotionState>((set, get) => ({
         break;
       }
       case 'jog_joint': {
+        const target = get().jointAngles[cmd.joint] + cmd.delta;
+        const limit = withinJointLimit(cmd.joint, target);
+        if (!limit.ok) {
+          get().pushLog(`Rejected ${cmd.type}: ${limit.reason}`, 'error');
+          set({ status: 'error', continuousJogActive: false });
+          return { commandId, ok: false, error: limit.error, reason: limit.reason };
+        }
         get().jogJoint(cmd.joint, cmd.delta);
         break;
       }
@@ -146,27 +162,49 @@ export const useMotionStore = create<MotionState>((set, get) => ({
         break;
       }
       case 'stop': {
-        set({ status: 'ready', mode: 'idle', continuousJogActive: false });
+        jogCanceller?.();
+        set((state) => ({
+          stopEpoch: state.stopEpoch + 1,
+          status: 'ready',
+          mode: 'idle',
+          continuousJogActive: false,
+        }));
         break;
       }
       case 'move_to': {
         set({ mode: 'jog', status: 'moving', target: cmd.target });
         const response = await solveIk(cmd.target, get().jointAngles);
-        return await get().applyIkResponse(commandId, response, 'IK target reached.');
+        return await get().applyIkResponse(commandId, response, 'IK target reached.', epoch);
       }
       case 'jog_cartesian': {
+        const { eePosition } = get();
+        const predicted = {
+          x: eePosition.x + cmd.delta.x,
+          y: eePosition.y + cmd.delta.y,
+          z: eePosition.z + cmd.delta.z,
+        };
+        const workspace = withinWorkspace(predicted);
+        if (!workspace.ok) {
+          get().pushLog(`Rejected ${cmd.type}: ${workspace.reason}`, 'error');
+          set({ status: 'error', continuousJogActive: false });
+          return { commandId, ok: false, error: workspace.error, reason: workspace.reason };
+        }
         set({ mode: 'jog', status: 'moving' });
         const response = await jogCartesian(cmd.delta, get().jointAngles);
         const mag = Math.hypot(cmd.delta.x, cmd.delta.y, cmd.delta.z) * 1000;
-        return await get().applyIkResponse(commandId, response, `Jogged ${mag.toFixed(1)} mm.`, {
-          animateTrajectory: cmd.continuous !== true,
-        });
+        return await get().applyIkResponse(
+          commandId,
+          response,
+          `Jogged ${mag.toFixed(1)} mm.`,
+          epoch,
+          { animateTrajectory: cmd.continuous !== true },
+        );
       }
       case 'touch_key': {
         const target = await getPanelKeyPosition(cmd.key);
         set({ mode: 'auto', status: 'moving', target });
         const response = await solveIk(target, get().jointAngles);
-        return await get().applyIkResponse(commandId, response, `Touched key ${cmd.key}.`);
+        return await get().applyIkResponse(commandId, response, `Touched key ${cmd.key}.`, epoch);
       }
       case 'sequence': {
         set({ mode: 'auto', status: 'moving' });
@@ -217,8 +255,20 @@ export const useMotionStore = create<MotionState>((set, get) => ({
     commandId: string,
     response: IkResponse,
     successLog: string,
+    epoch: number,
     options = {},
   ) => {
+    const cancelled = (): MotionResult => ({
+      commandId,
+      ok: false,
+      error: 'cancelled',
+      reason: 'Motion was cancelled.',
+    });
+
+    if (get().stopEpoch !== epoch) {
+      return cancelled();
+    }
+
     if (!response.success || !response.joints) {
       const reason = response.reason || 'Backend IK solver could not reach the target.';
       get().pushLog(reason, 'error');
@@ -228,8 +278,14 @@ export const useMotionStore = create<MotionState>((set, get) => ({
 
     const trajectory = options.animateTrajectory === false ? [] : response.trajectory ?? [];
     for (const point of trajectory) {
+      if (get().stopEpoch !== epoch) {
+        return cancelled();
+      }
       get().setJoints(jointMapToArray(point.joints));
       if (trajectory.length > 1) await sleep(20);
+    }
+    if (get().stopEpoch !== epoch) {
+      return cancelled();
     }
     get().setJoints(jointMapToArray(response.joints));
     if (response.tip) get().setEEPosition(response.tip);
@@ -267,7 +323,14 @@ export const useMotionStore = create<MotionState>((set, get) => ({
   },
 
   home: () => {
-    set({ jointAngles: new Array(NUM_JOINTS).fill(0), target: null });
+    set((state) => ({
+      stopEpoch: state.stopEpoch + 1,
+      jointAngles: new Array(NUM_JOINTS).fill(0),
+      target: null,
+      mode: 'idle',
+      status: 'ready',
+      continuousJogActive: false,
+    }));
     get().pushLog('Homed all joints to 0.', 'ok');
   },
 

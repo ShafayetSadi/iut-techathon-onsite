@@ -30,6 +30,8 @@ const PHRASES: [RegExp, string][] = [
   [/\bcounter clockwise\b/g, 'left'],
   [/\bcounterclockwise\b/g, 'left'],
   [/\bclockwise\b/g, 'right'],
+  // Common speech-to-text miss for the J6 label "tool roll".
+  [/\bto roll\b/g, 'tool roll'],
 ];
 
 /**
