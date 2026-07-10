@@ -93,7 +93,7 @@ function keyStatusForDigit(
   tipPosition: THREE.Vector3,
   motion: ReturnType<typeof useMotionStore.getState>,
 ): KeyVisualStatus {
-  if (tipPosition.distanceTo(key.touchPoint) <= TOUCH_TOLERANCE_M) return 'pressed';
+  if (distanceToKeyTop(tipPosition, key) <= TOUCH_TOLERANCE_M) return 'pressed';
 
   const isAutoPlaying = motion.mode === 'auto' && motion.status === 'moving' && motion.activePin !== null;
   if (!isAutoPlaying) return 'idle';
@@ -102,6 +102,26 @@ function keyStatusForDigit(
   if (matchingSteps.some((step) => step.status === 'moving')) return 'moving';
   if (matchingSteps.some((step) => step.status === 'pressed')) return 'pressed';
   return 'idle';
+}
+
+function distanceToKeyTop(tipPosition: THREE.Vector3, key: KeyVisual): number {
+  const halfWidth = KEY_VISUAL_WIDTH_M / 2;
+  const halfDepth = KEY_VISUAL_DEPTH_M / 2;
+  const closestX = THREE.MathUtils.clamp(
+    tipPosition.x,
+    key.touchPoint.x - halfWidth,
+    key.touchPoint.x + halfWidth,
+  );
+  const closestY = THREE.MathUtils.clamp(
+    tipPosition.y,
+    key.touchPoint.y - halfDepth,
+    key.touchPoint.y + halfDepth,
+  );
+  return Math.hypot(
+    tipPosition.x - closestX,
+    tipPosition.y - closestY,
+    tipPosition.z - key.touchPoint.z,
+  );
 }
 
 function applyKeyVisualStatus(key: KeyVisual, status: KeyVisualStatus): void {
@@ -287,13 +307,6 @@ export default function RobotScene() {
     );
     eeMarker.renderOrder = 5;
     scene.add(eeMarker);
-
-    const targetMarker = new THREE.Mesh(
-      new THREE.TorusGeometry(0.02, 0.004, 12, 24),
-      new THREE.MeshStandardMaterial({ color: '#d3a75c', emissive: '#453a22', emissiveIntensity: 0.6 }),
-    );
-    targetMarker.visible = false;
-    scene.add(targetMarker);
 
     const labelSprites: THREE.Sprite[] = [];
     const keyVisuals = new Map<string, KeyVisual>();
@@ -499,13 +512,6 @@ export default function RobotScene() {
           applyKeyVisualStatus(visual, keyStatusForDigit(digit, visual, eeVec, m));
         });
 
-        // Target ring.
-        if (m.target && !(m.mode === 'auto' && m.activePin !== null)) {
-          targetMarker.position.set(m.target.x, m.target.y, m.target.z);
-          targetMarker.visible = true;
-        } else {
-          targetMarker.visible = false;
-        }
       }
 
       controls.autoRotate = v.autoRotate;

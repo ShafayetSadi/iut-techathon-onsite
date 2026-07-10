@@ -62,13 +62,18 @@ export function jointMapToArray(joints: Record<string, number>): number[] {
   return JOINT_NAMES.map((name) => joints[name] ?? 0);
 }
 
-export async function solveIk(target: Vec3, jointAngles: number[]): Promise<IkResponse> {
+export async function solveIk(
+  target: Vec3,
+  jointAngles: number[],
+  options?: { toleranceMeters?: number },
+): Promise<IkResponse> {
   const res = await fetch(`${BACKEND_URL}/api/ik/solve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       target,
       currentJoints: jointArrayToMap(jointAngles),
+      ...(options?.toleranceMeters == null ? {} : { toleranceMeters: options.toleranceMeters }),
     }),
   });
   return parseBackendResponse(res);

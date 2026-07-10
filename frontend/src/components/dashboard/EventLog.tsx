@@ -12,8 +12,13 @@ function ts(t: number): string {
 export default function EventLog() {
   const log = useMotionStore((s) => s.log);
   const clearLog = useMotionStore((s) => s.clearLog);
+  const status = useMotionStore((s) => s.status);
   const mounted = useMounted();
   const endRef = useRef<HTMLDivElement>(null);
+  const latestError =
+    status === 'error'
+      ? [...log].reverse().find((entry) => entry.level === 'error')
+      : null;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'nearest' });
@@ -27,6 +32,11 @@ export default function EventLog() {
           clear
         </button>
       </div>
+      {latestError ? (
+        <div className="eventlog__alert" role="status">
+          {latestError.text}
+        </div>
+      ) : null}
       <div className="eventlog__body">
         {log.map((e, i) => (
           <div className={`eventlog__row eventlog__row--${e.level}`} key={`${e.t}-${i}`}>

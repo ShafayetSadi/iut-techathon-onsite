@@ -25,8 +25,6 @@ function Toggle({ label, k }: { label: string; k: ToggleKey }) {
 
 export default function ViewerControls() {
   const home = useMotionStore((s) => s.home);
-  const ignoreLimits = useMotionStore((s) => s.ignoreLimits);
-  const setIgnoreLimits = useMotionStore((s) => s.setIgnoreLimits);
   const useDegrees = useViewerStore((s) => s.useDegrees);
   const set = useViewerStore((s) => s.set);
 
@@ -43,16 +41,8 @@ export default function ViewerControls() {
 
       <div className="controls__group">
         <div className="controls__grouplabel">Behavior</div>
-        <div className="controls__grid">
+        <div className="controls__grid controls__grid--single">
           <Toggle label="Auto-rotate" k="autoRotate" />
-          <button
-            className={`toggle ${ignoreLimits ? 'toggle--on' : ''}`}
-            onClick={() => setIgnoreLimits(!ignoreLimits)}
-            type="button"
-          >
-            <span className="toggle__dot" />
-            Ignore limits
-          </button>
         </div>
       </div>
 
@@ -82,9 +72,6 @@ export default function ViewerControls() {
         </button>
       </div>
 
-      <p className="controls__hint">
-        Drag a joint in the 3D view to rotate it · drag empty space to orbit · scroll to zoom
-      </p>
     </div>
   );
 }

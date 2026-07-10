@@ -21,7 +21,7 @@ function sentence(text: string): string {
 
 /**
  * A backend `failureReason` can be a multi-line provider or Pydantic dump.
- * TranscriptLog shows it whole; speech gets the first line, capped at a word
+ * VoiceChat shows it whole; speech gets the first line, capped at a word
  * boundary. Reading a stack trace aloud is worse than saying nothing useful.
  */
 function concise(text: string): string {

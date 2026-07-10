@@ -34,6 +34,24 @@ def test_ik_solve_endpoint_for_panel_key() -> None:
     assert len(payload["trajectory"]) >= 2
 
 
+def test_ik_solve_endpoint_accepts_manual_touch_tolerance_override() -> None:
+    response = asyncio.run(
+        _request(
+            "POST",
+            "/api/ik/solve",
+            json={
+                "target": {"x": 0.55, "y": -0.05, "z": 0.05},
+                "toleranceMeters": 0.005,
+            },
+        )
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["errorMeters"] <= 0.005
+
+
 def test_motion_jog_endpoint_accepts_vector_delta() -> None:
     model = asyncio.run(_request("GET", "/api/robot/model")).json()
     response = asyncio.run(
@@ -149,6 +167,21 @@ def test_motion_planner_jog_moves_for_one_millimeter_step() -> None:
     assert moved_m >= 0.0005
     assert response.error_meters is not None
     assert response.error_meters <= 0.0005
+
+
+def test_motion_planner_jog_up_near_base_axis_below_top() -> None:
+    planner = get_motion_planner()
+    angles_deg = [0.0, 89.6, -115.6, 0.0, 16.9, 0.0, 1.1]
+    current = dict(zip(planner.model.controlled_joint_names, [radians(value) for value in angles_deg], strict=True))
+    before = forward_kinematics(planner.model, current).tip
+    assert before[2] < 1.25
+
+    response = planner.jog(current, Vector3(x=0.0, y=0.0, z=0.01))
+
+    assert response.success, response.reason
+    assert response.tip is not None
+    assert response.tip["z"] > before[2] + 0.008
+    assert response.reason is None
 
 
 def test_motion_planner_jog_accepts_useful_near_miss_at_tolerance_edge() -> None:

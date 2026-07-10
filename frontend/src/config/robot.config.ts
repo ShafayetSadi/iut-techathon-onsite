@@ -67,8 +67,11 @@ export const JOINT_INDEX: Record<string, number> = Object.fromEntries(
 export const TOUCH_TOLERANCE_M = 0.005;
 
 /**
- * Coarse frontend workspace bound in meters. Keep this aligned with the backend
- * ROBOT_WORKSPACE_RADIUS_M default so frontend validation does not reject poses
- * that the backend can solve or display, including the neutral stylus-tip pose.
+ * Coarse frontend workspace bounds in meters. Keep these aligned with the
+ * backend ROBOT_WORKSPACE_RADIUS_M / ROBOT_MIN_Z_M / ROBOT_MAX_Z_M defaults so
+ * frontend validation and the visual safety guide match the backend gate.
  */
-export const MAX_REACH_M = 1.7;
+export const WORKSPACE_RADIUS_M = 1.7;
+export const WORKSPACE_MIN_Z_M = -0.25;
+export const WORKSPACE_MAX_Z_M = 1.6;
+export const MAX_REACH_M = WORKSPACE_RADIUS_M;

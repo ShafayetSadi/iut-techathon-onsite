@@ -56,7 +56,7 @@ class PinService:
             current_joints = approach.joints
             trajectory.extend(approach.trajectory)
 
-            touch = self.motion_planner.solve_target(touch_target, current_joints)
+            touch = self._solve_touch_target(touch_target, current_joints)
             trajectory.extend(touch.trajectory)
             touch_error = touch.error_meters
             if not self._is_successful_solve(touch):
@@ -141,6 +141,20 @@ class PinService:
             approachOffsetMeters=self.approach_offset_m,
             steps=steps,
         )
+
+    def _solve_touch_target(
+        self,
+        touch_target: Vector3,
+        current_joints: dict[str, float] | None,
+    ) -> IKSolveResponse:
+        try:
+            return self.motion_planner.solve_target(
+                touch_target,
+                current_joints,
+                tolerance_m=self.tolerance_m,
+            )
+        except TypeError:
+            return self.motion_planner.solve_target(touch_target, current_joints)
 
     def _approach_target(self, key_position: Vector3) -> Vector3:
         return Vector3(

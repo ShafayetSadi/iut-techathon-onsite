@@ -15,7 +15,6 @@ export default function KeyboardGuide() {
           <kbd>Q</kbd>/<kbd>E</kbd> → Z
         </span>
       </div>
-      <p className="kbd-guide__hint">Hold Shift for fine jog · arrows also work</p>
     </div>
   );
 }
