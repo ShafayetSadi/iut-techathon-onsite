@@ -24,6 +24,13 @@ import {
   type Vec3,
 } from './commands';
 import { validateCommand } from './validate';
+import {
+  getPanelKeyPosition,
+  jogCartesian,
+  jointMapToArray,
+  solveIk,
+  type IkResponse,
+} from './backendApi';
 
 export type Mode = 'idle' | 'jog' | 'voice' | 'auto';
 export type Status = 'ready' | 'moving' | 'error';
@@ -62,6 +69,11 @@ export interface MotionState {
 
   // ── high-level entry point (all five triggers funnel through here) ───
   dispatch: (cmd: MotionCommand) => Promise<MotionResult>;
+  applyIkResponse: (
+    commandId: string,
+    response: IkResponse,
+    successLog: string,
+  ) => Promise<MotionResult>;
 
   // ── low-level setters used by the render loop / UI ───────────────────
   setJoints: (angles: number[]) => void;
@@ -80,6 +92,18 @@ export interface MotionState {
 }
 
 const MAX_LOG = 200;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function errorCodeFromReason(reason: string | undefined): MotionResult['error'] {
+  const text = reason?.toLowerCase() ?? '';
+  if (text.includes('workspace')) return 'workspace_bounds';
+  if (text.includes('limit')) return 'joint_limit';
+  if (text.includes('malformed') || text.includes('invalid')) return 'malformed';
+  return 'unreachable';
+}
 
 export const useMotionStore = create<MotionState>((set, get) => ({
   jointAngles: new Array(NUM_JOINTS).fill(0),
@@ -102,10 +126,8 @@ export const useMotionStore = create<MotionState>((set, get) => ({
       return { commandId, ok: false, error: gate.error, reason: gate.reason };
     }
 
-    // Phase 1 executes the direct joint commands; IK-based commands
-    // (move_to / touch_key / jog_cartesian) are stubbed until Phase 2 lands the
-    // solver in the backend. The safety gate already ran above.
-    switch (cmd.type) {
+    try {
+      switch (cmd.type) {
       case 'set_joint': {
         get().setJoint(cmd.joint, cmd.value);
         break;
@@ -122,11 +144,53 @@ export const useMotionStore = create<MotionState>((set, get) => ({
         set({ status: 'ready', mode: 'idle' });
         break;
       }
+      case 'move_to': {
+        set({ mode: 'jog', status: 'moving', target: cmd.target });
+        const response = await solveIk(cmd.target, get().jointAngles);
+        return await get().applyIkResponse(commandId, response, 'IK target reached.');
+      }
+      case 'jog_cartesian': {
+        const delta = {
+          x: cmd.axis === 'x' ? cmd.delta : 0,
+          y: cmd.axis === 'y' ? cmd.delta : 0,
+          z: cmd.axis === 'z' ? cmd.delta : 0,
+        };
+        set({ mode: 'jog', status: 'moving' });
+        const response = await jogCartesian(delta, get().jointAngles);
+        return await get().applyIkResponse(commandId, response, `Jogged ${cmd.axis.toUpperCase()} ${(cmd.delta * 1000).toFixed(0)} mm.`);
+      }
+      case 'touch_key': {
+        const target = await getPanelKeyPosition(cmd.key);
+        set({ mode: 'auto', status: 'moving', target });
+        const response = await solveIk(target, get().jointAngles);
+        return await get().applyIkResponse(commandId, response, `Touched key ${cmd.key}.`);
+      }
+      case 'sequence': {
+        set({ mode: 'auto', status: 'moving' });
+        for (const step of cmd.steps) {
+          const result = await get().dispatch(step);
+          if (!result.ok) return result;
+        }
+        set({ status: 'ready' });
+        return {
+          commandId,
+          ok: true,
+          finalJoints: [...get().jointAngles],
+          finalEE: { ...get().eePosition },
+        };
+      }
       default: {
-        const reason = `${cmd.type} needs the IK solver (Phase 2) — not wired yet.`;
-        get().pushLog(reason, 'info');
+        const reason = 'Motion command is not implemented yet.';
+        get().pushLog(reason, 'error');
+        set({ status: 'error' });
         return { commandId, ok: false, error: 'unreachable', reason };
       }
+      }
+    } catch (err) {
+      const reason = (err as Error).message || 'Backend motion command failed.';
+      get().pushLog(reason, 'error');
+      set({ status: 'error' });
+      return { commandId, ok: false, error: errorCodeFromReason(reason), reason };
     }
 
     const { jointAngles, eePosition } = get();
@@ -144,6 +208,34 @@ export const useMotionStore = create<MotionState>((set, get) => ({
       .slice(0, NUM_JOINTS)
       .map((a, i) => clampToLimit(i, a, ignore));
     set({ jointAngles: next });
+  },
+
+  applyIkResponse: async (commandId: string, response: IkResponse, successLog: string) => {
+    if (!response.success || !response.joints) {
+      const reason = response.reason || 'Backend IK solver could not reach the target.';
+      get().pushLog(reason, 'error');
+      set({ status: 'error' });
+      return { commandId, ok: false, error: errorCodeFromReason(reason), reason };
+    }
+
+    const trajectory = response.trajectory ?? [];
+    for (const point of trajectory) {
+      get().setJoints(jointMapToArray(point.joints));
+      if (trajectory.length > 1) await sleep(20);
+    }
+    get().setJoints(jointMapToArray(response.joints));
+    if (response.tip) get().setEEPosition(response.tip);
+    set({ status: 'ready' });
+
+    const errorMm = response.errorMeters == null ? '' : ` error ${(response.errorMeters * 1000).toFixed(1)} mm`;
+    get().pushLog(`${successLog}${errorMm}`, 'ok');
+    return {
+      commandId,
+      ok: true,
+      reachedTarget: response.errorMeters == null ? undefined : response.errorMeters <= 0.005,
+      finalJoints: jointMapToArray(response.joints),
+      finalEE: response.tip,
+    };
   },
 
   setJoint: (index, value) => {
