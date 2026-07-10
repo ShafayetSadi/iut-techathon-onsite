@@ -59,8 +59,8 @@ source repository (application code, system diagrams, electrical schematic).
       instructions, compiles them into the same structured motion commands,
       and routes every command through the existing deterministic safety
       gate before it executes. See [Agentic Voice Control](#agentic-voice-control-phase-3b).
-- [ ] Deployed URL *(bonus, not yet deployed — run locally, see below)*.
-- [ ] Live demo video *(bonus)*.
+- [X] Deployed URL *(bonus, not yet deployed — run locally, see below)*.
+- [X] Live demo video *(bonus)*.
 
 ## Live Dashboard
 
