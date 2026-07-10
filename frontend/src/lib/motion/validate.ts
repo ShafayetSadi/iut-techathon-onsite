@@ -96,6 +96,12 @@ export function validateCommand(cmd: MotionCommand): ValidationResult {
       }
       return OK; // coordinate lookup + workspace check happens at resolve time
 
+    case 'enter_pin':
+      if (!/^[1-6]{6}$/.test(cmd.pin)) {
+        return reject('malformed', 'PIN must be exactly six digits using keys 1-6.');
+      }
+      return OK;
+
     case 'sequence':
       if (!Array.isArray(cmd.steps) || cmd.steps.length === 0) {
         return reject('malformed', 'sequence requires at least one step.');

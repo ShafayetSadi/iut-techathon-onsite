@@ -1,19 +1,13 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import ControlSidebar from '@/components/layout/ControlSidebar';
 import ModeStatus from '@/components/dashboard/ModeStatus';
 import JointReadout from '@/components/dashboard/JointReadout';
 import EEReadout from '@/components/dashboard/EEReadout';
 import EventLog from '@/components/dashboard/EventLog';
-import TranscriptLog from '@/components/dashboard/TranscriptLog';
-import JointSliders from '@/components/viewer/JointSliders';
-import ViewerControls from '@/components/viewer/ViewerControls';
-import CartesianControls, { KeyTouchControls } from '@/components/viewer/CartesianControls';
-import Joystick from '@/components/controls/Joystick';
-import KeyboardJog from '@/components/controls/KeyboardJog';
-import VoiceControls from '@/components/controls/VoiceControls';
+import CommandInspector from '@/components/dashboard/CommandInspector';
 
-// The scene touches WebGL / window on mount, so it is client-only.
 const RobotScene = dynamic(() => import('@/components/scene/RobotScene'), {
   ssr: false,
   loading: () => <div className="scene-host scene-host--loading">Initializing 3D scene…</div>,
@@ -24,31 +18,17 @@ export default function Home() {
     <div className="app">
       <header className="topbar">
         <div className="topbar__brand">
-          <span className="topbar__logo">◈</span>
+          <span className="topbar__logo">V</span>
           <div>
             <div className="topbar__title">Vantage · Dry Run</div>
             <div className="topbar__sub">6-DOF stylus-arm simulator</div>
           </div>
         </div>
-        <div className="topbar__phase">Phase 3 — Talk to the Arm</div>
+        <div className="topbar__phase">Operator console</div>
       </header>
 
       <main className="layout">
-        <aside className="panel panel--left">
-          <h2 className="panel__h">Tip jog · joystick</h2>
-          <Joystick />
-          <KeyboardJog />
-          <h2 className="panel__h">Voice</h2>
-          <VoiceControls />
-          <h2 className="panel__h">Joint control</h2>
-          <JointSliders />
-          <h2 className="panel__h">IK target</h2>
-          <CartesianControls />
-          <h2 className="panel__h">Test panel</h2>
-          <KeyTouchControls />
-          <h2 className="panel__h">Viewer</h2>
-          <ViewerControls />
-        </aside>
+        <ControlSidebar />
 
         <section className="stage">
           <RobotScene />
@@ -57,10 +37,10 @@ export default function Home() {
         <aside className="panel panel--right">
           <h2 className="panel__h">Status</h2>
           <ModeStatus />
+          <CommandInspector />
           <EEReadout />
           <JointReadout />
           <EventLog />
-          <TranscriptLog />
         </aside>
       </main>
     </div>

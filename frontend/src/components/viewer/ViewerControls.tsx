@@ -3,7 +3,10 @@
 import { useMotionStore } from '@/lib/motion/store';
 import { useViewerStore, type ViewerState } from '@/lib/viewer/viewerStore';
 
-type ToggleKey = Exclude<keyof ViewerState, 'toggle' | 'set' | 'setHoveredJoint' | 'hoveredJoint'>;
+type ToggleKey = Exclude<
+  keyof ViewerState,
+  'toggle' | 'set' | 'setHoveredJoint' | 'hoveredJoint' | 'setJogStepMm' | 'jogStepMm'
+>;
 
 function Toggle({ label, k }: { label: string; k: ToggleKey }) {
   const value = useViewerStore((s) => s[k]) as boolean;
@@ -24,30 +27,62 @@ export default function ViewerControls() {
   const home = useMotionStore((s) => s.home);
   const ignoreLimits = useMotionStore((s) => s.ignoreLimits);
   const setIgnoreLimits = useMotionStore((s) => s.setIgnoreLimits);
+  const useDegrees = useViewerStore((s) => s.useDegrees);
+  const set = useViewerStore((s) => s.set);
 
   return (
     <div className="controls">
+      <div className="controls__group">
+        <div className="controls__grouplabel">Display</div>
+        <div className="controls__grid">
+          <Toggle label="Key labels" k="showKeyLabels" />
+          <Toggle label="EE marker" k="showEEMarker" />
+          <Toggle label="Test marker" k="showTestMarker" />
+          <Toggle label="Collision" k="showCollision" />
+        </div>
+      </div>
+
+      <div className="controls__group">
+        <div className="controls__grouplabel">Behavior</div>
+        <div className="controls__grid">
+          <Toggle label="Auto-rotate" k="autoRotate" />
+          <button
+            className={`toggle ${ignoreLimits ? 'toggle--on' : ''}`}
+            onClick={() => setIgnoreLimits(!ignoreLimits)}
+            type="button"
+          >
+            <span className="toggle__dot" />
+            Ignore limits
+          </button>
+        </div>
+      </div>
+
+      <div className="controls__group">
+        <div className="controls__grouplabel">Units</div>
+        <div className="unit-toggle" role="group" aria-label="Angle units">
+          <button
+            className={`unit-toggle__btn ${useDegrees ? 'unit-toggle__btn--active' : ''}`}
+            type="button"
+            onClick={() => set('useDegrees', true)}
+          >
+            Degrees
+          </button>
+          <button
+            className={`unit-toggle__btn ${!useDegrees ? 'unit-toggle__btn--active' : ''}`}
+            type="button"
+            onClick={() => set('useDegrees', false)}
+          >
+            Radians
+          </button>
+        </div>
+      </div>
+
       <div className="controls__row">
         <button className="btn btn--primary" onClick={home} type="button">
-          ⌂ Home
-        </button>
-        <button
-          className={`toggle ${ignoreLimits ? 'toggle--on' : ''}`}
-          onClick={() => setIgnoreLimits(!ignoreLimits)}
-          type="button"
-        >
-          <span className="toggle__dot" />
-          Ignore limits
+          ⌂ Home arm
         </button>
       </div>
-      <div className="controls__grid">
-        <Toggle label="Collision" k="showCollision" />
-        <Toggle label="Degrees" k="useDegrees" />
-        <Toggle label="Key labels" k="showKeyLabels" />
-        <Toggle label="Test marker" k="showTestMarker" />
-        <Toggle label="EE marker" k="showEEMarker" />
-        <Toggle label="Auto-rotate" k="autoRotate" />
-      </div>
+
       <p className="controls__hint">
         Drag a joint in the 3D view to rotate it · drag empty space to orbit · scroll to zoom
       </p>

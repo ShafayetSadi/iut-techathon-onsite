@@ -5,10 +5,6 @@
  * *renderer* of this truth, never an independent holder. The Three.js render
  * loop reads `jointAngles` each frame, pushes them onto the robot, computes the
  * end-effector via forward kinematics, and writes `eePosition` back here.
- *
- * The render loop uses `getState()` / `setState()` directly (outside React), so
- * pushing joint updates 60x/sec never triggers a React re-render storm. Only the
- * dashboard components subscribe via hooks and re-render when values change.
  */
 
 import { create } from 'zustand';
@@ -28,8 +24,11 @@ import {
   getPanelKeyPosition,
   jogCartesian,
   jointMapToArray,
+  runPinSequence,
   solveIk,
   type IkResponse,
+  type PinSequenceStep,
+  type TrajectoryPoint,
 } from './backendApi';
 
 export type Mode = 'idle' | 'jog' | 'voice' | 'auto';
@@ -42,6 +41,15 @@ export interface LogEntry {
   level: LogLevel;
 }
 
+export type PinStepStatus = 'pending' | 'moving' | 'pressed' | 'failed';
+
+export interface PinProgressEntry {
+  index: number;
+  digit: string;
+  status: PinStepStatus;
+  errorMm?: number;
+}
+
 const IGNORE_LIMIT = 2 * Math.PI; // widened bound when limits are ignored
 
 function clampToLimit(index: number, value: number, ignore: boolean): number {
@@ -50,11 +58,10 @@ function clampToLimit(index: number, value: number, ignore: boolean): number {
 }
 
 export interface MotionState {
-  // ── authoritative state ──────────────────────────────────────────────
-  jointAngles: number[]; // radians, indexed by robot.config JOINTS order
+  jointAngles: number[];
   jointLimits: [number, number][];
   jointNames: string[];
-  eePosition: Vec3; // computed via FK each frame (base frame, meters)
+  eePosition: Vec3;
   target: Vec3 | null;
   mode: Mode;
   status: Status;
@@ -62,14 +69,13 @@ export interface MotionState {
   robotReady: boolean;
   continuousJogActive: boolean;
   stopEpoch: number;
-  /**
-   * Interactive affordance: loosen manual jogging past URDF limits. The
-   * deterministic safety gate in validate.ts still enforces limits on every
-   * *dispatched* command regardless of this flag.
-   */
+  activePin: string | null;
+  pinProgress: PinProgressEntry[];
+  pinSteps: PinSequenceStep[];
+  autoError: string | null;
+  autoRunId: number;
   ignoreLimits: boolean;
 
-  // ── high-level entry point (all five triggers funnel through here) ───
   dispatch: (cmd: MotionCommand) => Promise<MotionResult>;
   applyIkResponse: (
     commandId: string,
@@ -79,7 +85,6 @@ export interface MotionState {
     options?: { animateTrajectory?: boolean },
   ) => Promise<MotionResult>;
 
-  // ── low-level setters used by the render loop / UI ───────────────────
   setJoints: (angles: number[]) => void;
   setJoint: (index: number, value: number) => void;
   setJointByName: (name: string, value: number) => void;
@@ -108,12 +113,39 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
 }
 
+function splitTrajectory(
+  trajectory: TrajectoryPoint[],
+): [TrajectoryPoint[], TrajectoryPoint[], TrajectoryPoint[]] {
+  const segmentLength = Math.ceil(trajectory.length / 3);
+  return [
+    trajectory.slice(0, segmentLength),
+    trajectory.slice(segmentLength, segmentLength * 2),
+    trajectory.slice(segmentLength * 2),
+  ];
+}
+
 function errorCodeFromReason(reason: string | undefined): MotionResult['error'] {
   const text = reason?.toLowerCase() ?? '';
   if (text.includes('workspace')) return 'workspace_bounds';
   if (text.includes('limit')) return 'joint_limit';
   if (text.includes('malformed') || text.includes('invalid')) return 'malformed';
   return 'unreachable';
+}
+
+export function tipDistanceMm(a: Vec3, b: Vec3): number {
+  return Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z) * 1000;
+}
+
+export function jogSuccessLog(actualMm: number | null): string {
+  return `Jogged ${actualMm == null ? 'n/a' : actualMm.toFixed(1)} mm.`;
+}
+
+export function jogResponseLog(response: Pick<IkResponse, 'reason'>, actualMm: number | null): string {
+  return response.reason ?? jogSuccessLog(actualMm);
+}
+
+function cancelled(commandId: string, reason = 'Motion was cancelled.'): MotionResult {
+  return { commandId, ok: false, error: 'cancelled', reason };
 }
 
 export const useMotionStore = create<MotionState>((set, get) => ({
@@ -128,6 +160,11 @@ export const useMotionStore = create<MotionState>((set, get) => ({
   robotReady: false,
   continuousJogActive: false,
   stopEpoch: 0,
+  activePin: null,
+  pinProgress: [],
+  pinSteps: [],
+  autoError: null,
+  autoRunId: 0,
   ignoreLimits: false,
 
   dispatch: async (cmd) => {
@@ -139,6 +176,12 @@ export const useMotionStore = create<MotionState>((set, get) => ({
       return { commandId, ok: false, error: gate.error, reason: gate.reason };
     }
     const epoch = get().stopEpoch;
+
+    if (get().mode === 'auto' && get().status === 'moving' && get().activePin && cmd.type !== 'stop') {
+      const reason = 'Autonomous sequence is running.';
+      get().pushLog(reason, 'error');
+      return { commandId, ok: false, error: 'cancelled', reason };
+    }
 
     try {
       switch (cmd.type) {
@@ -168,6 +211,9 @@ export const useMotionStore = create<MotionState>((set, get) => ({
           status: 'ready',
           mode: 'idle',
           continuousJogActive: false,
+          activePin: null,
+          autoError: 'Autonomous sequence cancelled.',
+          autoRunId: state.autoRunId + 1,
         }));
         break;
       }
@@ -177,11 +223,11 @@ export const useMotionStore = create<MotionState>((set, get) => ({
         return await get().applyIkResponse(commandId, response, 'IK target reached.', epoch);
       }
       case 'jog_cartesian': {
-        const { eePosition } = get();
+        const before = { ...get().eePosition };
         const predicted = {
-          x: eePosition.x + cmd.delta.x,
-          y: eePosition.y + cmd.delta.y,
-          z: eePosition.z + cmd.delta.z,
+          x: before.x + cmd.delta.x,
+          y: before.y + cmd.delta.y,
+          z: before.z + cmd.delta.z,
         };
         const workspace = withinWorkspace(predicted);
         if (!workspace.ok) {
@@ -191,20 +237,132 @@ export const useMotionStore = create<MotionState>((set, get) => ({
         }
         set({ mode: 'jog', status: 'moving' });
         const response = await jogCartesian(cmd.delta, get().jointAngles);
-        const mag = Math.hypot(cmd.delta.x, cmd.delta.y, cmd.delta.z) * 1000;
-        return await get().applyIkResponse(
-          commandId,
-          response,
-          `Jogged ${mag.toFixed(1)} mm.`,
-          epoch,
-          { animateTrajectory: cmd.continuous !== true },
-        );
+        const actualMm = response.tip ? tipDistanceMm(before, response.tip) : null;
+        const successLog = jogResponseLog(response, actualMm);
+        return await get().applyIkResponse(commandId, response, successLog, epoch, {
+          animateTrajectory: cmd.continuous !== true,
+        });
       }
       case 'touch_key': {
         const target = await getPanelKeyPosition(cmd.key);
         set({ mode: 'auto', status: 'moving', target });
         const response = await solveIk(target, get().jointAngles);
         return await get().applyIkResponse(commandId, response, `Touched key ${cmd.key}.`, epoch);
+      }
+      case 'enter_pin': {
+        const runId = get().autoRunId + 1;
+        const pinProgress = [...cmd.pin].map((digit, index) => ({
+          index: index + 1,
+          digit,
+          status: 'pending' as const,
+        }));
+        set({
+          mode: 'auto',
+          status: 'moving',
+          target: null,
+          activePin: cmd.pin,
+          pinProgress,
+          pinSteps: [],
+          autoError: null,
+          autoRunId: runId,
+          continuousJogActive: false,
+        });
+        get().pushLog(`Starting autonomous PIN ${cmd.pin}.`, 'info');
+
+        const response = await runPinSequence(cmd.pin, get().jointAngles);
+        set({ pinSteps: response.steps });
+
+        for (const step of response.steps) {
+          if (get().autoRunId !== runId || get().stopEpoch !== epoch) {
+            const reason = 'Autonomous sequence cancelled.';
+            get().pushLog(reason, 'error');
+            return { commandId, ok: false, error: 'cancelled', reason };
+          }
+
+          set((state) => ({
+            pinProgress: state.pinProgress.map((entry) => (
+              entry.index === step.index ? { ...entry, status: 'moving' } : entry
+            )),
+          }));
+
+          const [approachTrajectory, touchTrajectory, retractTrajectory] = splitTrajectory(step.trajectory);
+
+          get().pushLog(`Approach key ${step.digit}.`, 'info');
+          set({ target: step.approachTarget });
+          for (const point of approachTrajectory) {
+            if (get().autoRunId !== runId || get().stopEpoch !== epoch) {
+              const reason = 'Autonomous sequence cancelled.';
+              get().pushLog(reason, 'error');
+              return { commandId, ok: false, error: 'cancelled', reason };
+            }
+            get().setJoints(jointMapToArray(point.joints));
+            await sleep(18);
+          }
+
+          get().pushLog(`Touch key ${step.digit}.`, 'info');
+          set({ target: step.touchTarget });
+          for (const point of touchTrajectory) {
+            if (get().autoRunId !== runId || get().stopEpoch !== epoch) {
+              const reason = 'Autonomous sequence cancelled.';
+              get().pushLog(reason, 'error');
+              return { commandId, ok: false, error: 'cancelled', reason };
+            }
+            get().setJoints(jointMapToArray(point.joints));
+            await sleep(18);
+          }
+
+          get().pushLog(`Retract key ${step.digit}.`, 'info');
+          set({ target: step.retractTarget });
+          for (const point of retractTrajectory) {
+            if (get().autoRunId !== runId || get().stopEpoch !== epoch) {
+              const reason = 'Autonomous sequence cancelled.';
+              get().pushLog(reason, 'error');
+              return { commandId, ok: false, error: 'cancelled', reason };
+            }
+            get().setJoints(jointMapToArray(point.joints));
+            await sleep(18);
+          }
+
+          if (!step.pressed) {
+            const reason = step.message || response.message;
+            set((state) => ({
+              status: 'error',
+              autoError: reason,
+              pinProgress: state.pinProgress.map((entry) => (
+                entry.index === step.index ? { ...entry, status: 'failed' } : entry
+              )),
+            }));
+            get().pushLog(reason, 'error');
+            return { commandId, ok: false, error: errorCodeFromReason(reason), reason };
+          }
+
+          const errorMm = step.touchErrorMeters == null ? undefined : step.touchErrorMeters * 1000;
+          set((state) => ({
+            pinProgress: state.pinProgress.map((entry) => (
+              entry.index === step.index ? { ...entry, status: 'pressed', errorMm } : entry
+            )),
+          }));
+          get().pushLog(
+            `Pressed key ${step.digit}: error ${errorMm == null ? 'n/a' : errorMm.toFixed(1)} mm.`,
+            'ok',
+          );
+        }
+
+        if (!response.success) {
+          set({ status: 'error', autoError: response.message });
+          get().pushLog(response.message, 'error');
+          return { commandId, ok: false, error: errorCodeFromReason(response.message), reason: response.message };
+        }
+
+        set({ status: 'ready', mode: 'idle', target: null, autoError: null });
+        get().pushLog(response.message, 'ok');
+        return {
+          commandId,
+          ok: true,
+          reachedTarget: true,
+          finalJoints: [...get().jointAngles],
+          finalEE: { ...get().eePosition },
+        };
       }
       case 'sequence': {
         set({ mode: 'auto', status: 'moving' });
@@ -258,15 +416,8 @@ export const useMotionStore = create<MotionState>((set, get) => ({
     epoch: number,
     options = {},
   ) => {
-    const cancelled = (): MotionResult => ({
-      commandId,
-      ok: false,
-      error: 'cancelled',
-      reason: 'Motion was cancelled.',
-    });
-
     if (get().stopEpoch !== epoch) {
-      return cancelled();
+      return cancelled(commandId);
     }
 
     if (!response.success || !response.joints) {
@@ -279,13 +430,13 @@ export const useMotionStore = create<MotionState>((set, get) => ({
     const trajectory = options.animateTrajectory === false ? [] : response.trajectory ?? [];
     for (const point of trajectory) {
       if (get().stopEpoch !== epoch) {
-        return cancelled();
+        return cancelled(commandId);
       }
       get().setJoints(jointMapToArray(point.joints));
       if (trajectory.length > 1) await sleep(20);
     }
     if (get().stopEpoch !== epoch) {
-      return cancelled();
+      return cancelled(commandId);
     }
     get().setJoints(jointMapToArray(response.joints));
     if (response.tip) get().setEEPosition(response.tip);
@@ -325,17 +476,18 @@ export const useMotionStore = create<MotionState>((set, get) => ({
   home: () => {
     set((state) => ({
       stopEpoch: state.stopEpoch + 1,
+      autoRunId: state.autoRunId + 1,
       jointAngles: new Array(NUM_JOINTS).fill(0),
       target: null,
       mode: 'idle',
       status: 'ready',
       continuousJogActive: false,
+      activePin: null,
     }));
     get().pushLog('Homed all joints to 0.', 'ok');
   },
 
   setEEPosition: (p) => {
-    // Only write when it actually moved (>0.1 mm) to avoid needless re-renders.
     const cur = get().eePosition;
     if (
       Math.abs(cur.x - p.x) < 1e-4 &&
@@ -363,7 +515,6 @@ export const useMotionStore = create<MotionState>((set, get) => ({
   setRobotReady: (ready) => set({ robotReady: ready }),
   setIgnoreLimits: (ignore) => {
     set({ ignoreLimits: ignore });
-    // Re-clamp current pose to the (possibly tighter) bounds.
     if (!ignore) get().setJoints(get().jointAngles);
   },
 

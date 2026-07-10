@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NUM_JOINTS } from '@/config/robot.config';
-import { registerJogCanceller, useMotionStore } from './store';
+import { jogResponseLog, jogSuccessLog, registerJogCanceller, tipDistanceMm, useMotionStore } from './store';
 import * as backend from './backendApi';
 
 vi.mock('./backendApi', async (importOriginal) => {
@@ -10,6 +10,7 @@ vi.mock('./backendApi', async (importOriginal) => {
     jogCartesian: vi.fn(),
     solveIk: vi.fn(),
     getPanelKeyPosition: vi.fn(),
+    runPinSequence: vi.fn(),
   };
 });
 
@@ -24,11 +25,40 @@ function resetStore() {
     robotReady: true,
     continuousJogActive: false,
     stopEpoch: 0,
+    activePin: null,
+    pinProgress: [],
+    pinSteps: [],
+    autoError: null,
+    autoRunId: 0,
     ignoreLimits: false,
   });
   registerJogCanceller(null);
   vi.clearAllMocks();
 }
+
+describe('jog movement log helpers', () => {
+  it('measures actual tip displacement in millimeters', () => {
+    const before = { x: -0.026, y: -0.004, z: 1.494 };
+    const after = { x: -0.0212, y: -0.004, z: 1.494 };
+
+    expect(tipDistanceMm(before, after)).toBeCloseTo(4.8, 8);
+  });
+
+  it('formats actual movement instead of requested movement', () => {
+    expect(jogSuccessLog(0)).toBe('Jogged 0.0 mm.');
+    expect(jogSuccessLog(4.8)).toBe('Jogged 4.8 mm.');
+  });
+
+  it('does not invent movement when the backend omits a tip', () => {
+    expect(jogSuccessLog(null)).toBe('Jogged n/a mm.');
+  });
+
+  it('uses backend jog reasons for blocked movement', () => {
+    expect(jogResponseLog({ reason: 'Jog blocked: requested direction is outside reach.' }, 0)).toBe(
+      'Jog blocked: requested direction is outside reach.',
+    );
+  });
+});
 
 describe('motion store safety dispatch', () => {
   beforeEach(() => {
@@ -75,6 +105,7 @@ describe('motion store safety dispatch', () => {
       mode: 'idle',
       status: 'ready',
       stopEpoch: 1,
+      autoRunId: 1,
     });
   });
 

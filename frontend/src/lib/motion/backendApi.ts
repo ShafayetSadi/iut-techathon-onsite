@@ -22,6 +22,29 @@ export interface IkResponse {
   reason?: string;
 }
 
+export interface PinSequenceStep {
+  index: number;
+  digit: string;
+  keyPosition: Vec3;
+  approachTarget: Vec3;
+  touchTarget: Vec3;
+  retractTarget: Vec3;
+  touchErrorMeters?: number | null;
+  pressed: boolean;
+  trajectory: TrajectoryPoint[];
+  message?: string | null;
+}
+
+export interface PinSequenceResponse {
+  success: boolean;
+  pin: string;
+  message: string;
+  plannedDigits: string[];
+  toleranceMeters: number;
+  approachOffsetMeters: number;
+  steps: PinSequenceStep[];
+}
+
 interface PanelKeyResponse {
   digit: string;
   position: Vec3;
@@ -66,6 +89,21 @@ export async function jogCartesian(
   return parseBackendResponse(res);
 }
 
+export async function runPinSequence(
+  pin: string,
+  jointAngles: number[],
+): Promise<PinSequenceResponse> {
+  const res = await fetch(`${BACKEND_URL}/api/pin/sequence`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      pin,
+      currentJoints: jointArrayToMap(jointAngles),
+    }),
+  });
+  return parseBackendResponse(res);
+}
+
 export async function getPanelKeyPosition(key: string): Promise<Vec3> {
   const res = await fetch(`${BACKEND_URL}/api/panel/keys`, { cache: 'no-store' });
   const payload = (await parseBackendResponse(res)) as PanelKeysResponse;
@@ -81,4 +119,3 @@ async function parseBackendResponse<T = unknown>(res: Response): Promise<T> {
   }
   return payload;
 }
-

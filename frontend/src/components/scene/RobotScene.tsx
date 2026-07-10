@@ -29,9 +29,9 @@ import { useMotionStore } from '@/lib/motion/store';
 import { useViewerStore } from '@/lib/viewer/viewerStore';
 import { JOINT_NAMES } from '@/config/robot.config';
 
-const HIGHLIGHT = new THREE.Color('#f2991a'); // amber, matches the arm accents
-const KEY_COLOR = new THREE.Color('#3a7bd5');
-const KEY_COLOR_1 = new THREE.Color('#e94b6a'); // key "1" = also the test marker anchor
+const HIGHLIGHT = new THREE.Color('#d97757'); // clay accent, matches the UI chrome
+const KEY_COLOR = new THREE.Color('#7fa1c4');
+const KEY_COLOR_1 = new THREE.Color('#c96d63'); // key "1" = also the test marker anchor
 const KEY_VISUAL_WIDTH_M = 0.03;
 const KEY_VISUAL_DEPTH_M = 0.03;
 const KEY_VISUAL_HEIGHT_M = 0.016;
@@ -53,6 +53,65 @@ function collectLinkMeshes(joint: THREE.Object3D): THREE.Mesh[] {
   return meshes;
 }
 
+function makeAxisLabelSprite(text: string, color: string): THREE.Sprite {
+  const size = 96;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = color;
+  ctx.font = 'bold 68px Inter, system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, size / 2, size / 2 + 2);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.anisotropy = 4;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(0.055, 0.055, 0.055);
+  sprite.renderOrder = 10;
+  return sprite;
+}
+
+/** Ground-plane X/Y arrows at the base origin — matches dashboard axis colors. */
+function createGroundXYLegend(): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'xy-legend';
+  const z = 0.006;
+  const len = 0.42;
+  const origin = new THREE.Vector3(0, 0, z);
+
+  const xArrow = new THREE.ArrowHelper(
+    new THREE.Vector3(1, 0, 0),
+    origin,
+    len,
+    0xd97878,
+    0.07,
+    0.045,
+  );
+  const yArrow = new THREE.ArrowHelper(
+    new THREE.Vector3(0, 1, 0),
+    origin,
+    len,
+    0x8fbf8a,
+    0.07,
+    0.045,
+  );
+  group.add(xArrow, yArrow);
+
+  const xLabel = makeAxisLabelSprite('X', '#d97878');
+  xLabel.position.set(len + 0.05, 0, z + 0.01);
+  group.add(xLabel);
+
+  const yLabel = makeAxisLabelSprite('Y', '#8fbf8a');
+  yLabel.position.set(0, len + 0.05, z + 0.01);
+  group.add(yLabel);
+
+  return group;
+}
+
+const LEGEND_AXIS_LEN = 0.82;
+
 function makeLabelSprite(text: string): THREE.Sprite {
   const size = 128;
   const canvas = document.createElement('canvas');
@@ -61,10 +120,10 @@ function makeLabelSprite(text: string): THREE.Sprite {
   const ctx = canvas.getContext('2d')!;
   ctx.beginPath();
   ctx.arc(size / 2, size / 2, size / 2 - 4, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(11,14,17,0.85)';
+  ctx.fillStyle = 'rgba(23,21,19,0.88)';
   ctx.fill();
   ctx.lineWidth = 6;
-  ctx.strokeStyle = '#f2991a';
+  ctx.strokeStyle = '#d97757';
   ctx.stroke();
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 72px Inter, system-ui, sans-serif';
@@ -82,17 +141,24 @@ function makeLabelSprite(text: string): THREE.Sprite {
 
 export default function RobotScene() {
   const mountRef = useRef<HTMLDivElement>(null);
+  const legendRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
 
+    const legendEl = legendRef.current;
+    const xLine = legendEl?.querySelector<SVGLineElement>('.axis-legend__line--x');
+    const yLine = legendEl?.querySelector<SVGLineElement>('.axis-legend__line--y');
+    const xText = legendEl?.querySelector<SVGTextElement>('.axis-legend__text--x');
+    const yText = legendEl?.querySelector<SVGTextElement>('.axis-legend__text--y');
+
     // ── Z-up world (base frame) ──────────────────────────────────────────
     THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#0b0e11');
-    scene.fog = new THREE.Fog('#0b0e11', 4, 12);
+    scene.background = new THREE.Color('#171513');
+    scene.fog = new THREE.Fog('#171513', 4, 12);
 
     const width = mount.clientWidth || 800;
     const height = mount.clientHeight || 600;
@@ -124,13 +190,23 @@ export default function RobotScene() {
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     key.shadow.camera.near = 0.1;
-    key.shadow.camera.far = 8;
-    const s = 1.6;
-    key.shadow.camera.left = -s;
-    key.shadow.camera.right = s;
-    key.shadow.camera.top = s;
-    key.shadow.camera.bottom = -s;
-    key.shadow.bias = -0.0004;
+    key.shadow.camera.far = 4;
+    // Frustum tightened to the arm's actual reach (was ±1.6m — mostly empty
+    // space around a ~0.15m-radius arm, which starved shadow-map resolution
+    // right where it mattered: the small sphere/cylinder joint hubs).
+    key.shadow.camera.left = -0.9;
+    key.shadow.camera.right = 0.9;
+    key.shadow.camera.top = 1.7;
+    key.shadow.camera.bottom = -0.1;
+    // Depth bias alone wasn't enough on the curved, overlapping joint-hub
+    // geometry (sphere hub flush against cylinder link) — it self-shadowed
+    // in a banded/hatched pattern ("shadow acne"). normalBias offsets the
+    // sample along the surface normal instead of view depth, which is the
+    // correct fix for acne on curved surfaces.
+    key.shadow.bias = -0.0015;
+    key.shadow.normalBias = 0.015;
+    key.target.position.set(0, 0, 0.55);
+    scene.add(key.target);
     scene.add(key);
 
     // ── Ground + grid (XY plane at z=0 in the Z-up world) ─────────────────
@@ -141,27 +217,25 @@ export default function RobotScene() {
     ground.receiveShadow = true;
     scene.add(ground);
 
-    const grid = new THREE.GridHelper(12, 48, 0x2a3038, 0x1b2026);
+    const grid = new THREE.GridHelper(12, 48, 0x3a332a, 0x241f1a);
     grid.rotation.x = Math.PI / 2; // lay flat in XY for the Z-up world
     (grid.material as THREE.Material).transparent = true;
     (grid.material as THREE.Material).opacity = 0.6;
     scene.add(grid);
 
-    // Base-frame axes helper (X red, Y green, Z blue) at the robot origin.
-    const axes = new THREE.AxesHelper(0.2);
-    scene.add(axes);
+    scene.add(createGroundXYLegend());
 
     // ── Markers that live outside the robot ──────────────────────────────
     const eeMarker = new THREE.Mesh(
       new THREE.SphereGeometry(0.012, 16, 16),
-      new THREE.MeshStandardMaterial({ color: '#3ddc84', emissive: '#0f5c33', emissiveIntensity: 0.6 }),
+      new THREE.MeshStandardMaterial({ color: '#87a878', emissive: '#2b3a24', emissiveIntensity: 0.6 }),
     );
     eeMarker.renderOrder = 5;
     scene.add(eeMarker);
 
     const targetMarker = new THREE.Mesh(
       new THREE.TorusGeometry(0.02, 0.004, 12, 24),
-      new THREE.MeshStandardMaterial({ color: '#f2c94c', emissive: '#5c4a0f', emissiveIntensity: 0.6 }),
+      new THREE.MeshStandardMaterial({ color: '#d3a75c', emissive: '#453a22', emissiveIntensity: 0.6 }),
     );
     targetMarker.visible = false;
     scene.add(targetMarker);
@@ -304,9 +378,13 @@ export default function RobotScene() {
     // Route joint manipulation through the store — keep it the single source
     // of truth. The robot updates on the next render-loop tick.
     dragControls.updateJoint = (joint: URDFJoint, angle: number) => {
-      motion.getState().setJointByName(joint.name, angle);
+      const state = motion.getState();
+      if (state.mode === 'auto' && state.status === 'moving' && state.activePin !== null) return;
+      state.setJointByName(joint.name, angle);
     };
     dragControls.onHover = (joint: URDFJoint) => {
+      const state = motion.getState();
+      if (state.mode === 'auto' && state.status === 'moving' && state.activePin !== null) return;
       controls.enabled = false; // don't orbit while a joint is grabbable
       renderer.domElement.style.cursor = 'grab';
       viewer.getState().setHoveredJoint(joint.name);
@@ -325,17 +403,23 @@ export default function RobotScene() {
       clearHighlight();
     };
     dragControls.onDragStart = () => {
+      const state = motion.getState();
+      if (state.mode === 'auto' && state.status === 'moving' && state.activePin !== null) return;
       renderer.domElement.style.cursor = 'grabbing';
-      motion.getState().setMode('jog');
-      motion.getState().setStatus('moving');
+      state.setMode('jog');
+      state.setStatus('moving');
     };
     dragControls.onDragEnd = () => {
+      const state = motion.getState();
+      if (state.mode === 'auto' && state.status === 'moving' && state.activePin !== null) return;
       renderer.domElement.style.cursor = 'grab';
-      motion.getState().setStatus('ready');
+      state.setStatus('ready');
     };
 
     // ── Render loop ──────────────────────────────────────────────────────
     const eeVec = new THREE.Vector3();
+    const legendX = new THREE.Vector3();
+    const legendY = new THREE.Vector3();
     let raf = 0;
     const tick = () => {
       raf = requestAnimationFrame(tick);
@@ -375,6 +459,31 @@ export default function RobotScene() {
       controls.autoRotate = v.autoRotate;
       controls.autoRotateSpeed = 1.0;
       controls.update();
+
+      // Screen-corner X/Y compass — world axes projected into the view plane.
+      legendX.set(1, 0, 0).applyQuaternion(camera.quaternion);
+      legendY.set(0, 1, 0).applyQuaternion(camera.quaternion);
+      const tip = (v: THREE.Vector3) => ({
+        x: v.x * LEGEND_AXIS_LEN,
+        y: -v.y * LEGEND_AXIS_LEN,
+      });
+      const xTip = tip(legendX);
+      const yTip = tip(legendY);
+      const labelAt = (v: THREE.Vector3) => ({
+        x: v.x * LEGEND_AXIS_LEN * 1.24,
+        y: -v.y * LEGEND_AXIS_LEN * 1.24,
+      });
+      const xLbl = labelAt(legendX);
+      const yLbl = labelAt(legendY);
+      xLine?.setAttribute('x2', String(xTip.x));
+      xLine?.setAttribute('y2', String(xTip.y));
+      yLine?.setAttribute('x2', String(yTip.x));
+      yLine?.setAttribute('y2', String(yTip.y));
+      xText?.setAttribute('x', String(xLbl.x));
+      xText?.setAttribute('y', String(xLbl.y));
+      yText?.setAttribute('x', String(yLbl.x));
+      yText?.setAttribute('y', String(yLbl.y));
+
       renderer.render(scene, camera);
     };
     tick();
@@ -413,5 +522,21 @@ export default function RobotScene() {
     };
   }, []);
 
-  return <div ref={mountRef} className="scene-host" />;
+  return (
+    <div ref={mountRef} className="scene-host">
+      <div ref={legendRef} className="axis-legend" aria-label="X and Y axis orientation">
+        <svg className="axis-legend__svg" viewBox="-1 -1 2 2" aria-hidden="true">
+          <circle className="axis-legend__origin" cx="0" cy="0" r="0.045" />
+          <line className="axis-legend__line axis-legend__line--x" x1="0" y1="0" x2="0.82" y2="0" />
+          <line className="axis-legend__line axis-legend__line--y" x1="0" y1="0" x2="0" y2="0.82" />
+          <text className="axis-legend__text axis-legend__text--x" x="1" y="0">
+            X
+          </text>
+          <text className="axis-legend__text axis-legend__text--y" x="0" y="-1">
+            Y
+          </text>
+        </svg>
+      </div>
+    </div>
+  );
 }
