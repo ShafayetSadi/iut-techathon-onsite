@@ -59,6 +59,11 @@ export default function CommandInspector() {
       detailLabel = 'Transcript';
       detail = latestVoice.text;
       commandStatus = 'FAILED';
+    } else if (latestVoice.agentPending) {
+      safety = 'PENDING';
+      detailLabel = 'Stage';
+      detail = 'Interpreting with agent…';
+      commandStatus = 'PENDING';
     } else if (latestVoice.agentResult) {
       // The agent path never produces a `matched` resolution, so it must be read
       // before the deterministic branches below — otherwise every agent command,

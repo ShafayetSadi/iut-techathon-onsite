@@ -32,6 +32,7 @@ export default function VoiceControls() {
   const [typedCommand, setTypedCommand] = useState('');
   const beginTranscript = useVoiceStore((s) => s.beginTranscript);
   const resolveTranscript = useVoiceStore((s) => s.resolveTranscript);
+  const markAgentPending = useVoiceStore((s) => s.markAgentPending);
   const attachResult = useVoiceStore((s) => s.attachResult);
   const failTranscript = useVoiceStore((s) => s.failTranscript);
   const setRecording = useVoiceStore((s) => s.setRecording);
@@ -41,6 +42,9 @@ export default function VoiceControls() {
       const voice = useVoiceStore.getState();
       const pendingPlan = voice.getPendingPlan();
       const resolution = resolveTranscript(id, transcript);
+      if (pendingPlan || resolution.status === 'unmatched' || resolution.status === 'ambiguous') {
+        markAgentPending(id);
+      }
       const outcome = await executeVoiceCommand(resolution, { transcript, pendingPlan });
       attachResult(id, outcome);
 
@@ -55,7 +59,7 @@ export default function VoiceControls() {
         voice.clearPendingPlan();
       }
     },
-    [attachResult, resolveTranscript],
+    [attachResult, markAgentPending, resolveTranscript],
   );
 
   const handleClip = useCallback(
