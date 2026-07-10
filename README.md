@@ -338,6 +338,7 @@ ground.
 
 - Architecture and rationale: [docs/phase5-electrical-schematic-brief.md](docs/phase5-electrical-schematic-brief.md)
 - Ready-to-run Wokwi project + setup instructions: [hardware/wokwi/README.md](hardware/wokwi/README.md)
+- Live Wokwi simulation: https://wokwi.com/projects/469141524183502849
 
 ## Validation
 
