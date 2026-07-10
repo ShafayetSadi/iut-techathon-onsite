@@ -110,7 +110,7 @@ the rendered result. Full detail (including the PIN-entry sequence) lives in
 [docs/workflow.md](docs/workflow.md).
 
 ```mermaid
-flowchart TD
+flowchart LR
     Start([Operator opens the app]) --> Load[Frontend loads robot model + panel config<br/>GET /api/robot/model, /api/panel/config]
     Load --> ChooseMode{Select control mode<br/>in ControlSidebar}
 
@@ -160,7 +160,7 @@ to an LLM reasoning layer instead of being rejected outright. The reasoning
 layer only ever *proposes* a plan — it never touches the robot directly.
 
 ```mermaid
-flowchart TD
+flowchart LR
     Speech[Speech or typed text] --> STT[ElevenLabs STT<br/>if spoken]
     STT --> Matcher[Deterministic matcher<br/>matcher.ts / grammar.ts]
     Matcher -->|matched| Command[MotionCommand]
@@ -347,7 +347,7 @@ it reaches the robot — required so the (optional) agentic layer can never send
 an unchecked command:
 
 ```mermaid
-flowchart TD
+flowchart LR
     Input[Motion input] --> FrontendGate[Frontend validateCommand]
     FrontendGate -->|reject| UIError[Typed error in UI log]
     FrontendGate -->|accept| BackendGate[Backend SafetyValidator]
