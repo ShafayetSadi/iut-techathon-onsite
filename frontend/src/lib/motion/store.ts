@@ -290,18 +290,6 @@ export const useMotionStore = create<MotionState>((set, get) => ({
             await sleep(18);
           }
 
-          get().pushLog(`Retract key ${step.digit}.`, 'info');
-          set({ target: step.retractTarget });
-          for (const point of retractTrajectory) {
-            if (get().autoRunId !== runId) {
-              const reason = 'Autonomous sequence cancelled.';
-              get().pushLog(reason, 'error');
-              return { commandId, ok: false, error: 'cancelled', reason };
-            }
-            get().setJoints(jointMapToArray(point.joints));
-            await sleep(18);
-          }
-
           if (!step.pressed) {
             const reason = step.message || response.message;
             set((state) => ({
@@ -325,6 +313,18 @@ export const useMotionStore = create<MotionState>((set, get) => ({
             `Pressed key ${step.digit}: error ${errorMm == null ? 'n/a' : errorMm.toFixed(1)} mm.`,
             'ok',
           );
+
+          get().pushLog(`Retract key ${step.digit}.`, 'info');
+          set({ target: step.retractTarget });
+          for (const point of retractTrajectory) {
+            if (get().autoRunId !== runId) {
+              const reason = 'Autonomous sequence cancelled.';
+              get().pushLog(reason, 'error');
+              return { commandId, ok: false, error: 'cancelled', reason };
+            }
+            get().setJoints(jointMapToArray(point.joints));
+            await sleep(18);
+          }
         }
 
         if (!response.success) {

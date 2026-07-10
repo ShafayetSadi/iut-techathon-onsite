@@ -27,17 +27,31 @@ import { applyJoints, forwardKinematics } from '@/lib/robot/robotAdapter';
 import { loadKeyConfig, toPanelKeys } from '@/lib/panel/keyConfig';
 import { useMotionStore } from '@/lib/motion/store';
 import { useViewerStore } from '@/lib/viewer/viewerStore';
-import { JOINT_NAMES } from '@/config/robot.config';
+import { JOINT_NAMES, TOUCH_TOLERANCE_M } from '@/config/robot.config';
 
 const HIGHLIGHT = new THREE.Color('#d97757'); // clay accent, matches the UI chrome
 const KEY_COLOR = new THREE.Color('#7fa1c4');
-const KEY_COLOR_1 = new THREE.Color('#c96d63'); // key "1" = also the test marker anchor
+const KEY_MOVING_COLOR = new THREE.Color('#d3a75c');
+const KEY_PRESSED_COLOR = new THREE.Color('#3ddc84');
+const KEY_MOVING_EMISSIVE = new THREE.Color('#453a22');
+const KEY_PRESSED_EMISSIVE = new THREE.Color('#123820');
 const KEY_VISUAL_WIDTH_M = 0.03;
 const KEY_VISUAL_DEPTH_M = 0.03;
 const KEY_VISUAL_HEIGHT_M = 0.016;
+const KEY_PRESS_TRAVEL_M = 0.004;
 const PANEL_PLATE_HEIGHT_M = 0.008;
 const PANEL_MARGIN_M = 0.05;
 const LABEL_OFFSET_M = 0.03;
+
+type KeyVisualStatus = 'idle' | 'moving' | 'pressed';
+
+interface KeyVisual {
+  mesh: THREE.Mesh<THREE.BoxGeometry, THREE.MeshStandardMaterial>;
+  touchPoint: THREE.Vector3;
+  baseZ: number;
+  idleColor: THREE.Color;
+  idleEmissive: THREE.Color;
+}
 
 /** Collect the meshes that belong directly to a joint's link, not deeper joints. */
 function collectLinkMeshes(joint: THREE.Object3D): THREE.Mesh[] {
@@ -71,6 +85,44 @@ function makeAxisLabelSprite(text: string, color: string): THREE.Sprite {
   sprite.scale.set(0.055, 0.055, 0.055);
   sprite.renderOrder = 10;
   return sprite;
+}
+
+function keyStatusForDigit(
+  digit: string,
+  key: KeyVisual,
+  tipPosition: THREE.Vector3,
+  motion: ReturnType<typeof useMotionStore.getState>,
+): KeyVisualStatus {
+  if (tipPosition.distanceTo(key.touchPoint) <= TOUCH_TOLERANCE_M) return 'pressed';
+
+  const matchingSteps = motion.pinProgress.filter((step) => step.digit === digit);
+  if (matchingSteps.some((step) => step.status === 'moving')) return 'moving';
+  if (matchingSteps.some((step) => step.status === 'pressed')) return 'pressed';
+  return 'idle';
+}
+
+function applyKeyVisualStatus(key: KeyVisual, status: KeyVisualStatus): void {
+  const mat = key.mesh.material;
+  if (status === 'pressed') {
+    mat.color.copy(KEY_PRESSED_COLOR);
+    mat.emissive.copy(KEY_PRESSED_EMISSIVE);
+    mat.emissiveIntensity = 0.85;
+    key.mesh.position.z = key.baseZ - KEY_PRESS_TRAVEL_M;
+    return;
+  }
+
+  if (status === 'moving') {
+    mat.color.copy(KEY_MOVING_COLOR);
+    mat.emissive.copy(KEY_MOVING_EMISSIVE);
+    mat.emissiveIntensity = 0.75;
+    key.mesh.position.z = key.baseZ;
+    return;
+  }
+
+  mat.color.copy(key.idleColor);
+  mat.emissive.copy(key.idleEmissive);
+  mat.emissiveIntensity = 0.5;
+  key.mesh.position.z = key.baseZ;
 }
 
 /** Ground-plane X/Y arrows at the base origin — matches dashboard axis colors. */
@@ -240,8 +292,8 @@ export default function RobotScene() {
     targetMarker.visible = false;
     scene.add(targetMarker);
 
-    let testMarker: THREE.Mesh | null = null;
     const labelSprites: THREE.Sprite[] = [];
+    const keyVisuals = new Map<string, KeyVisual>();
 
     // ── State refs used by the render loop ───────────────────────────────
     let robot: URDFRobot | null = null;
@@ -311,15 +363,16 @@ export default function RobotScene() {
         panelGroup.add(plate);
 
         for (const k of keys) {
-          const isKey1 = k.label === '1';
+          const idleColor = KEY_COLOR;
+          const idleEmissive = new THREE.Color('#0e2440');
           // key.config.json provides authoritative stylus touch points, not
           // physical key dimensions. These boxes are visual markers whose top
           // centers align exactly with the provided coordinates.
           const box = new THREE.Mesh(
             new THREE.BoxGeometry(KEY_VISUAL_WIDTH_M, KEY_VISUAL_DEPTH_M, KEY_VISUAL_HEIGHT_M),
             new THREE.MeshStandardMaterial({
-              color: isKey1 ? KEY_COLOR_1 : KEY_COLOR,
-              emissive: isKey1 ? '#4a1420' : '#0e2440',
+              color: idleColor,
+              emissive: idleEmissive,
               emissiveIntensity: 0.5,
               roughness: 0.5,
             }),
@@ -327,6 +380,13 @@ export default function RobotScene() {
           box.castShadow = true;
           box.receiveShadow = true;
           box.position.set(k.position.x, k.position.y, k.position.z - KEY_VISUAL_HEIGHT_M / 2);
+          keyVisuals.set(k.label, {
+            mesh: box,
+            touchPoint: new THREE.Vector3(k.position.x, k.position.y, k.position.z),
+            baseZ: box.position.z,
+            idleColor: idleColor.clone(),
+            idleEmissive: idleEmissive.clone(),
+          });
           panelGroup.add(box);
 
           const label = makeLabelSprite(k.label);
@@ -335,19 +395,6 @@ export default function RobotScene() {
           labelSprites.push(label);
         }
         scene.add(panelGroup);
-
-        // §7 sanity check: a bright test marker dropped at key "1"'s exact
-        // coordinate. If it sits on the key box, the base/panel frames agree.
-        const key1 = keys.find((k) => k.label === '1');
-        if (key1) {
-          testMarker = new THREE.Mesh(
-            new THREE.SphereGeometry(0.008, 16, 16),
-            new THREE.MeshBasicMaterial({ color: '#ff00e5' }),
-          );
-          testMarker.position.set(key1.position.x, key1.position.y, key1.position.z);
-          testMarker.renderOrder = 6;
-          scene.add(testMarker);
-        }
 
         motion.getState().pushLog(
           `Panel rendered: ${keys.length} keys (${cfg.units}, frame ${cfg.frame}).`,
@@ -445,10 +492,12 @@ export default function RobotScene() {
         // Collision + label + marker visibility toggles.
         for (const node of colliderNodes) node.visible = v.showCollision;
         for (const sp of labelSprites) sp.visible = v.showKeyLabels;
-        if (testMarker) testMarker.visible = v.showTestMarker;
+        keyVisuals.forEach((visual, digit) => {
+          applyKeyVisualStatus(visual, keyStatusForDigit(digit, visual, eeVec, m));
+        });
 
         // Target ring.
-        if (m.target) {
+        if (m.target && !(m.mode === 'auto' && m.activePin !== null)) {
           targetMarker.position.set(m.target.x, m.target.y, m.target.z);
           targetMarker.visible = true;
         } else {
