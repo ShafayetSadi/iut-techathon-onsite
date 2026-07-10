@@ -32,6 +32,12 @@ import { JOINT_NAMES } from '@/config/robot.config';
 const HIGHLIGHT = new THREE.Color('#f2991a'); // amber, matches the arm accents
 const KEY_COLOR = new THREE.Color('#3a7bd5');
 const KEY_COLOR_1 = new THREE.Color('#e94b6a'); // key "1" = also the test marker anchor
+const KEY_VISUAL_WIDTH_M = 0.03;
+const KEY_VISUAL_DEPTH_M = 0.03;
+const KEY_VISUAL_HEIGHT_M = 0.016;
+const PANEL_PLATE_HEIGHT_M = 0.008;
+const PANEL_MARGIN_M = 0.05;
+const LABEL_OFFSET_M = 0.03;
 
 /** Collect the meshes that belong directly to a joint's link, not deeper joints. */
 function collectLinkMeshes(joint: THREE.Object3D): THREE.Mesh[] {
@@ -213,12 +219,12 @@ export default function RobotScene() {
         // Backing plate spanning the keys.
         const xs = keys.map((k) => k.position.x);
         const ys = keys.map((k) => k.position.y);
-        const zPlate = Math.min(...keys.map((k) => k.position.z)) - 0.006;
+        const zPlate = Math.min(...keys.map((k) => k.position.z)) - KEY_VISUAL_HEIGHT_M - PANEL_PLATE_HEIGHT_M / 2;
         const plate = new THREE.Mesh(
           new THREE.BoxGeometry(
-            Math.max(...xs) - Math.min(...xs) + 0.05,
-            Math.max(...ys) - Math.min(...ys) + 0.05,
-            0.008,
+            Math.max(...xs) - Math.min(...xs) + PANEL_MARGIN_M,
+            Math.max(...ys) - Math.min(...ys) + PANEL_MARGIN_M,
+            PANEL_PLATE_HEIGHT_M,
           ),
           new THREE.MeshStandardMaterial({ color: '#171b20', roughness: 0.9, metalness: 0.1 }),
         );
@@ -232,8 +238,11 @@ export default function RobotScene() {
 
         for (const k of keys) {
           const isKey1 = k.label === '1';
+          // key.config.json provides authoritative stylus touch points, not
+          // physical key dimensions. These boxes are visual markers whose top
+          // centers align exactly with the provided coordinates.
           const box = new THREE.Mesh(
-            new THREE.BoxGeometry(0.03, 0.03, 0.016),
+            new THREE.BoxGeometry(KEY_VISUAL_WIDTH_M, KEY_VISUAL_DEPTH_M, KEY_VISUAL_HEIGHT_M),
             new THREE.MeshStandardMaterial({
               color: isKey1 ? KEY_COLOR_1 : KEY_COLOR,
               emissive: isKey1 ? '#4a1420' : '#0e2440',
@@ -243,11 +252,11 @@ export default function RobotScene() {
           );
           box.castShadow = true;
           box.receiveShadow = true;
-          box.position.set(k.position.x, k.position.y, k.position.z);
+          box.position.set(k.position.x, k.position.y, k.position.z - KEY_VISUAL_HEIGHT_M / 2);
           panelGroup.add(box);
 
           const label = makeLabelSprite(k.label);
-          label.position.set(k.position.x, k.position.y, k.position.z + 0.03);
+          label.position.set(k.position.x, k.position.y, k.position.z + LABEL_OFFSET_M);
           panelGroup.add(label);
           labelSprites.push(label);
         }
