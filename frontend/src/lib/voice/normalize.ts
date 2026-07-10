@@ -57,6 +57,7 @@ const SYNONYMS: Record<string, string> = {
   halt: 'stop', abort: 'stop', freeze: 'stop',
   reset: 'home',
   centre: 'center',
+  once: '1 times', twice: '2 times', thrice: '3 times',
 
   // directions
   forwards: 'forward', ahead: 'forward',
@@ -70,6 +71,7 @@ const SYNONYMS: Record<string, string> = {
   mm: 'millimeters', millimeter: 'millimeters', millimetre: 'millimeters', millimetres: 'millimeters',
   m: 'meters', meter: 'meters', metre: 'meters', metres: 'meters',
   degree: 'degrees', deg: 'degrees', degs: 'degrees',
+  time: 'times',
 };
 
 const ONES: Record<string, number> = {

@@ -235,8 +235,26 @@ function buildTemplates(): Template[] {
     return PANEL_KEYS.includes(key) ? { type: 'touch_key', key } : null;
   };
 
+  const touchKeyRepeated = (params: number[]): MotionCommand | null => {
+    if (!finite(params, 2)) return null;
+    const key = String(params[0]);
+    const repeat = params[1];
+    if (!PANEL_KEYS.includes(key) || !Number.isInteger(repeat) || repeat < 1 || repeat > 6) return null;
+    return { type: 'sequence', steps: Array.from({ length: repeat }, () => ({ type: 'touch_key', key })) };
+  };
+
   templates.push({ skeleton: 'press key {n}', build: touchKey, domain: 'the panel has keys 1 to 6' });
   templates.push({ skeleton: 'press {n}', build: touchKey, domain: 'the panel has keys 1 to 6' });
+  templates.push({
+    skeleton: 'press key {n} {n} times',
+    build: touchKeyRepeated,
+    domain: 'the panel has keys 1 to 6 and repeat count must be 1 to 6',
+  });
+  templates.push({
+    skeleton: 'press {n} {n} times',
+    build: touchKeyRepeated,
+    domain: 'the panel has keys 1 to 6 and repeat count must be 1 to 6',
+  });
 
   templates.push({ skeleton: 'home', build: () => ({ type: 'home' }) });
 

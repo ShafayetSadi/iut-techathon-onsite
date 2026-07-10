@@ -145,6 +145,24 @@ describe('panel and system', () => {
     expect(matched('tap key 6').command).toEqual({ type: 'touch_key', key: '6' });
   });
 
+  it('presses keys repeatedly', () => {
+    expect(matched('touch the key six twice').command).toEqual({
+      type: 'sequence',
+      steps: [
+        { type: 'touch_key', key: '6' },
+        { type: 'touch_key', key: '6' },
+      ],
+    });
+    expect(matched('press key 3 three times').command).toEqual({
+      type: 'sequence',
+      steps: [
+        { type: 'touch_key', key: '3' },
+        { type: 'touch_key', key: '3' },
+        { type: 'touch_key', key: '3' },
+      ],
+    });
+  });
+
   it('rejects keys that are not on the panel', () => {
     const resolution = matchTranscript('press key 9');
     expect(resolution.status).toBe('unmatched');
