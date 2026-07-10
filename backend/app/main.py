@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import (
+    routes_agent,
     routes_hardware,
     routes_health,
     routes_ik,
@@ -42,6 +43,6 @@ app.include_router(routes_motion.router, prefix=settings.api_prefix)
 app.include_router(routes_panel.router, prefix=settings.api_prefix)
 app.include_router(routes_pin.router, prefix=settings.api_prefix)
 app.include_router(routes_voice.router, prefix=settings.api_prefix)
+app.include_router(routes_agent.router, prefix=settings.api_prefix)
 app.include_router(routes_hardware.router, prefix=settings.api_prefix)
 app.include_router(websocket_state.router)
-

@@ -35,6 +35,16 @@ class Settings(BaseSettings):
     elevenlabs_tag_audio_events: bool = False
     elevenlabs_keyterms_enabled: bool = True
 
+    # Phase 3B reasoning. OpenRouter uses an OpenAI-compatible chat-completions
+    # API, but both the key and model stay server-side and deployment-specific.
+    openrouter_api_key: str | None = None
+    openrouter_model: str | None = None
+    openrouter_url: str = "https://openrouter.ai/api/v1/chat/completions"
+    openrouter_timeout_s: float = 20.0
+    openrouter_max_tool_iterations: int = 6
+    openrouter_http_referer: str | None = None
+    openrouter_app_title: str = "Vantage Dry Run"
+
     model_config = SettingsConfigDict(env_prefix="ROBOT_", env_file=".env")
 
 

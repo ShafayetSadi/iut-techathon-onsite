@@ -33,6 +33,7 @@ function resetStore() {
     autoError: null,
     autoRunId: 0,
     ignoreLimits: false,
+    agentExecutionToken: null,
   });
   registerJogCanceller(null);
   vi.clearAllMocks();
@@ -150,6 +151,22 @@ describe('motion store safety dispatch', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('blocks competing commands while an agent execution token owns the pipeline', async () => {
+    const store = useMotionStore.getState();
+    store.acquireAgentExecution('agent-test');
+
+    const blocked = await useMotionStore.getState().dispatch({ type: 'home' });
+    const allowed = await useMotionStore.getState().dispatch(
+      { type: 'home' },
+      { agentToken: 'agent-test' },
+    );
+
+    expect(blocked).toMatchObject({ ok: false, error: 'cancelled' });
+    expect(allowed.ok).toBe(true);
+    useMotionStore.getState().releaseAgentExecution('agent-test');
+    expect(useMotionStore.getState().agentExecutionToken).toBeNull();
   });
 
   it('sends the ±5 mm touch tolerance for manual key presses', async () => {

@@ -75,8 +75,12 @@ export interface MotionState {
   autoError: string | null;
   autoRunId: number;
   ignoreLimits: boolean;
+  agentExecutionToken: string | null;
 
-  dispatch: (cmd: MotionCommand) => Promise<MotionResult>;
+  dispatch: (
+    cmd: MotionCommand,
+    context?: { agentToken?: string },
+  ) => Promise<MotionResult>;
   applyIkResponse: (
     commandId: string,
     response: IkResponse,
@@ -98,6 +102,8 @@ export interface MotionState {
   endContinuousJog: () => void;
   setRobotReady: (ready: boolean) => void;
   setIgnoreLimits: (ignore: boolean) => void;
+  acquireAgentExecution: (token: string) => void;
+  releaseAgentExecution: (token: string) => void;
   pushLog: (text: string, level?: LogLevel) => void;
   clearLog: () => void;
 }
@@ -164,7 +170,9 @@ function cancelled(
   return { commandId, ok: false, error: "cancelled", reason };
 }
 
-function formatFinalState(result: Pick<MotionResult, "finalJoints" | "finalEE">): string {
+function formatFinalState(
+  result: Pick<MotionResult, "finalJoints" | "finalEE">,
+): string {
   const joints = result.finalJoints
     ? `[${result.finalJoints.map((value) => value.toFixed(3)).join(", ")}]`
     : "n/a";
@@ -187,7 +195,11 @@ export const useMotionStore = create<MotionState>((set, get) => {
     );
   };
 
-  const logBackend = (commandId: string, detail: string, level: LogLevel = "info") => {
+  const logBackend = (
+    commandId: string,
+    detail: string,
+    level: LogLevel = "info",
+  ) => {
     get().pushLog(`[${commandId}] backend -> ${detail}`, level);
   };
 
@@ -207,7 +219,8 @@ export const useMotionStore = create<MotionState>((set, get) => {
     return result;
   };
 
-  const fail = (commandId: string, result: MotionResult) => logFinalState(commandId, result);
+  const fail = (commandId: string, result: MotionResult) =>
+    logFinalState(commandId, result);
 
   return {
     jointAngles: new Array(NUM_JOINTS).fill(0),
@@ -235,10 +248,21 @@ export const useMotionStore = create<MotionState>((set, get) => {
     autoError: null,
     autoRunId: 0,
     ignoreLimits: false,
+    agentExecutionToken: null,
 
-    dispatch: async (cmd) => {
+    dispatch: async (cmd, context = {}) => {
       const commandId = nextCommandId();
       logInput(commandId, cmd);
+      const agentToken = get().agentExecutionToken;
+      if (
+        agentToken &&
+        context.agentToken !== agentToken &&
+        cmd.type !== "stop"
+      ) {
+        const reason = "Agent sequence is running.";
+        get().pushLog(reason, "error");
+        return cancelled(commandId, reason);
+      }
 
       const gate = validateCommand(cmd);
       if (!gate.ok) {
@@ -263,7 +287,12 @@ export const useMotionStore = create<MotionState>((set, get) => {
       ) {
         const reason = "Autonomous sequence is running.";
         logBackend(commandId, "skipped");
-        return fail(commandId, { commandId, ok: false, error: "cancelled", reason });
+        return fail(commandId, {
+          commandId,
+          ok: false,
+          error: "cancelled",
+          reason,
+        });
       }
 
       try {
@@ -372,7 +401,9 @@ export const useMotionStore = create<MotionState>((set, get) => {
           case "touch_key": {
             const target = await getPanelKeyPosition(cmd.key);
             set({ mode: "auto", status: "moving", target });
-            const response = await solveIk(target, get().jointAngles, { toleranceMeters: 0.005 });
+            const response = await solveIk(target, get().jointAngles, {
+              toleranceMeters: 0.005,
+            });
             logBackend(
               commandId,
               `${response.success ? "ok" : "fail"} (${response.reason ?? `touch key ${cmd.key}`})`,
@@ -415,7 +446,10 @@ export const useMotionStore = create<MotionState>((set, get) => {
 
             for (const step of response.steps) {
               if (get().autoRunId !== runId || get().stopEpoch !== epoch) {
-                const result = cancelled(commandId, "Autonomous sequence cancelled.");
+                const result = cancelled(
+                  commandId,
+                  "Autonomous sequence cancelled.",
+                );
                 return fail(commandId, result);
               }
 
@@ -434,7 +468,10 @@ export const useMotionStore = create<MotionState>((set, get) => {
               set({ target: step.approachTarget });
               for (const point of approachTrajectory) {
                 if (get().autoRunId !== runId || get().stopEpoch !== epoch) {
-                  const result = cancelled(commandId, "Autonomous sequence cancelled.");
+                  const result = cancelled(
+                    commandId,
+                    "Autonomous sequence cancelled.",
+                  );
                   return fail(commandId, result);
                 }
                 get().setJoints(jointMapToArray(point.joints));
@@ -445,7 +482,10 @@ export const useMotionStore = create<MotionState>((set, get) => {
               set({ target: step.touchTarget });
               for (const point of touchTrajectory) {
                 if (get().autoRunId !== runId || get().stopEpoch !== epoch) {
-                  const result = cancelled(commandId, "Autonomous sequence cancelled.");
+                  const result = cancelled(
+                    commandId,
+                    "Autonomous sequence cancelled.",
+                  );
                   return fail(commandId, result);
                 }
                 get().setJoints(jointMapToArray(point.joints));
@@ -456,7 +496,10 @@ export const useMotionStore = create<MotionState>((set, get) => {
               set({ target: step.retractTarget });
               for (const point of retractTrajectory) {
                 if (get().autoRunId !== runId || get().stopEpoch !== epoch) {
-                  const result = cancelled(commandId, "Autonomous sequence cancelled.");
+                  const result = cancelled(
+                    commandId,
+                    "Autonomous sequence cancelled.",
+                  );
                   return fail(commandId, result);
                 }
                 get().setJoints(jointMapToArray(point.joints));
@@ -530,12 +573,19 @@ export const useMotionStore = create<MotionState>((set, get) => {
           }
           case "sequence": {
             const parentCommand = describeMotionCommand(cmd);
-            logBackend(commandId, `delegated sequence (${cmd.steps.length} steps)`);
+            logBackend(
+              commandId,
+              `delegated sequence (${cmd.steps.length} steps)`,
+            );
             set({ mode: "auto", status: "moving", lastCommand: parentCommand });
-            for (const step of cmd.steps) {
-              const result = await get().dispatch(step);
+            for (const [index, step] of cmd.steps.entries()) {
+              const result = await get().dispatch(step, context);
               set({ lastCommand: parentCommand });
-              if (!result.ok) return fail(commandId, result);
+              if (!result.ok)
+                return fail(commandId, {
+                  ...result,
+                  reason: `Step ${index + 1} failed: ${result.reason ?? result.error}`,
+                });
             }
             set({ status: "ready", lastCommand: parentCommand });
             return logFinalState(commandId, {
@@ -549,11 +599,17 @@ export const useMotionStore = create<MotionState>((set, get) => {
             const reason = "Motion command is not implemented yet.";
             logBackend(commandId, "skipped");
             set({ status: "error", continuousJogActive: false });
-            return fail(commandId, { commandId, ok: false, error: "unreachable", reason });
+            return fail(commandId, {
+              commandId,
+              ok: false,
+              error: "unreachable",
+              reason,
+            });
           }
         }
       } catch (err) {
-        const reason = (err as Error).message || "Backend motion command failed.";
+        const reason =
+          (err as Error).message || "Backend motion command failed.";
         logBackend(commandId, `fail (${reason})`, "error");
         set({ status: "error", continuousJogActive: false });
         return fail(commandId, {
@@ -702,6 +758,11 @@ export const useMotionStore = create<MotionState>((set, get) => {
     setIgnoreLimits: (ignore) => {
       set({ ignoreLimits: ignore });
       if (!ignore) get().setJoints(get().jointAngles);
+    },
+    acquireAgentExecution: (token) => set({ agentExecutionToken: token }),
+    releaseAgentExecution: (token) => {
+      if (get().agentExecutionToken === token)
+        set({ agentExecutionToken: null });
     },
 
     pushLog: (text, level = "info") => {
