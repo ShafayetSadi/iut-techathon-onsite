@@ -47,7 +47,13 @@ function hasInput(v: Vec3): boolean {
   return vectorMagnitude(v) >= EPSILON;
 }
 
+function isAutonomousPinRunning(): boolean {
+  const state = useMotionStore.getState();
+  return state.mode === "auto" && state.status === "moving" && state.activePin !== null;
+}
+
 function beginGesture() {
+  if (isAutonomousPinRunning()) return;
   if (gestureActive) return;
   gestureActive = true;
   useMotionStore.getState().beginContinuousJog();
@@ -60,6 +66,10 @@ function endGestureIfIdle() {
 }
 
 function updateVector(unit: Vec3) {
+  if (isAutonomousPinRunning()) {
+    currentVector = ZERO;
+    return;
+  }
   currentVector = unit;
   if (hasInput(unit)) {
     beginGesture();
@@ -70,6 +80,10 @@ function updateVector(unit: Vec3) {
 
 function tick() {
   if (inFlight) return; // previous jog request still in flight — skip this tick
+  if (isAutonomousPinRunning()) {
+    currentVector = ZERO;
+    return;
+  }
   const v = currentVector;
   const mag = vectorMagnitude(v);
   if (mag < EPSILON) return;

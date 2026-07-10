@@ -28,8 +28,11 @@ import {
   getPanelKeyPosition,
   jogCartesian,
   jointMapToArray,
+  runPinSequence,
   solveIk,
   type IkResponse,
+  type PinSequenceStep,
+  type TrajectoryPoint,
 } from './backendApi';
 
 export type Mode = 'idle' | 'jog' | 'voice' | 'auto';
@@ -40,6 +43,15 @@ export interface LogEntry {
   t: number;
   text: string;
   level: LogLevel;
+}
+
+export type PinStepStatus = 'pending' | 'moving' | 'pressed' | 'failed';
+
+export interface PinProgressEntry {
+  index: number;
+  digit: string;
+  status: PinStepStatus;
+  errorMm?: number;
 }
 
 const IGNORE_LIMIT = 2 * Math.PI; // widened bound when limits are ignored
@@ -61,6 +73,11 @@ export interface MotionState {
   log: LogEntry[];
   robotReady: boolean;
   continuousJogActive: boolean;
+  activePin: string | null;
+  pinProgress: PinProgressEntry[];
+  pinSteps: PinSequenceStep[];
+  autoError: string | null;
+  autoRunId: number;
   /**
    * Interactive affordance: loosen manual jogging past URDF limits. The
    * deterministic safety gate in validate.ts still enforces limits on every
@@ -101,6 +118,17 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+function splitTrajectory(
+  trajectory: TrajectoryPoint[],
+): [TrajectoryPoint[], TrajectoryPoint[], TrajectoryPoint[]] {
+  const segmentLength = Math.ceil(trajectory.length / 3);
+  return [
+    trajectory.slice(0, segmentLength),
+    trajectory.slice(segmentLength, segmentLength * 2),
+    trajectory.slice(segmentLength * 2),
+  ];
+}
+
 function errorCodeFromReason(reason: string | undefined): MotionResult['error'] {
   const text = reason?.toLowerCase() ?? '';
   if (text.includes('workspace')) return 'workspace_bounds';
@@ -120,6 +148,11 @@ export const useMotionStore = create<MotionState>((set, get) => ({
   log: [{ t: Date.now(), text: 'System initialized. Awaiting URDF…', level: 'info' }],
   robotReady: false,
   continuousJogActive: false,
+  activePin: null,
+  pinProgress: [],
+  pinSteps: [],
+  autoError: null,
+  autoRunId: 0,
   ignoreLimits: false,
 
   dispatch: async (cmd) => {
@@ -129,6 +162,12 @@ export const useMotionStore = create<MotionState>((set, get) => ({
       get().pushLog(`Rejected ${cmd.type}: ${gate.reason}`, 'error');
       set({ status: 'error', continuousJogActive: false });
       return { commandId, ok: false, error: gate.error, reason: gate.reason };
+    }
+
+    if (get().mode === 'auto' && get().status === 'moving' && get().activePin && cmd.type !== 'stop') {
+      const reason = 'Autonomous sequence is running.';
+      get().pushLog(reason, 'error');
+      return { commandId, ok: false, error: 'cancelled', reason };
     }
 
     try {
@@ -146,7 +185,14 @@ export const useMotionStore = create<MotionState>((set, get) => ({
         break;
       }
       case 'stop': {
-        set({ status: 'ready', mode: 'idle', continuousJogActive: false });
+        set((state) => ({
+          status: 'ready',
+          mode: 'idle',
+          continuousJogActive: false,
+          activePin: null,
+          autoError: 'Autonomous sequence cancelled.',
+          autoRunId: state.autoRunId + 1,
+        }));
         break;
       }
       case 'move_to': {
@@ -167,6 +213,121 @@ export const useMotionStore = create<MotionState>((set, get) => ({
         set({ mode: 'auto', status: 'moving', target });
         const response = await solveIk(target, get().jointAngles);
         return await get().applyIkResponse(commandId, response, `Touched key ${cmd.key}.`);
+      }
+      case 'enter_pin': {
+        const runId = get().autoRunId + 1;
+        const pinProgress = [...cmd.pin].map((digit, index) => ({
+          index: index + 1,
+          digit,
+          status: 'pending' as const,
+        }));
+        set({
+          mode: 'auto',
+          status: 'moving',
+          target: null,
+          activePin: cmd.pin,
+          pinProgress,
+          pinSteps: [],
+          autoError: null,
+          autoRunId: runId,
+          continuousJogActive: false,
+        });
+        get().pushLog(`Starting autonomous PIN ${cmd.pin}.`, 'info');
+
+        const response = await runPinSequence(cmd.pin, get().jointAngles);
+        set({ pinSteps: response.steps });
+
+        for (const step of response.steps) {
+          if (get().autoRunId !== runId) {
+            const reason = 'Autonomous sequence cancelled.';
+            get().pushLog(reason, 'error');
+            return { commandId, ok: false, error: 'cancelled', reason };
+          }
+
+          set((state) => ({
+            pinProgress: state.pinProgress.map((entry) => (
+              entry.index === step.index ? { ...entry, status: 'moving' } : entry
+            )),
+          }));
+
+          const [approachTrajectory, touchTrajectory, retractTrajectory] = splitTrajectory(step.trajectory);
+
+          get().pushLog(`Approach key ${step.digit}.`, 'info');
+          set({ target: step.approachTarget });
+          for (const point of approachTrajectory) {
+            if (get().autoRunId !== runId) {
+              const reason = 'Autonomous sequence cancelled.';
+              get().pushLog(reason, 'error');
+              return { commandId, ok: false, error: 'cancelled', reason };
+            }
+            get().setJoints(jointMapToArray(point.joints));
+            await sleep(18);
+          }
+
+          get().pushLog(`Touch key ${step.digit}.`, 'info');
+          set({ target: step.touchTarget });
+          for (const point of touchTrajectory) {
+            if (get().autoRunId !== runId) {
+              const reason = 'Autonomous sequence cancelled.';
+              get().pushLog(reason, 'error');
+              return { commandId, ok: false, error: 'cancelled', reason };
+            }
+            get().setJoints(jointMapToArray(point.joints));
+            await sleep(18);
+          }
+
+          get().pushLog(`Retract key ${step.digit}.`, 'info');
+          set({ target: step.retractTarget });
+          for (const point of retractTrajectory) {
+            if (get().autoRunId !== runId) {
+              const reason = 'Autonomous sequence cancelled.';
+              get().pushLog(reason, 'error');
+              return { commandId, ok: false, error: 'cancelled', reason };
+            }
+            get().setJoints(jointMapToArray(point.joints));
+            await sleep(18);
+          }
+
+          if (!step.pressed) {
+            const reason = step.message || response.message;
+            set((state) => ({
+              status: 'error',
+              autoError: reason,
+              pinProgress: state.pinProgress.map((entry) => (
+                entry.index === step.index ? { ...entry, status: 'failed' } : entry
+              )),
+            }));
+            get().pushLog(reason, 'error');
+            return { commandId, ok: false, error: errorCodeFromReason(reason), reason };
+          }
+
+          const errorMm = step.touchErrorMeters == null ? undefined : step.touchErrorMeters * 1000;
+          set((state) => ({
+            pinProgress: state.pinProgress.map((entry) => (
+              entry.index === step.index ? { ...entry, status: 'pressed', errorMm } : entry
+            )),
+          }));
+          get().pushLog(
+            `Pressed key ${step.digit}: error ${errorMm == null ? 'n/a' : errorMm.toFixed(1)} mm.`,
+            'ok',
+          );
+        }
+
+        if (!response.success) {
+          set({ status: 'error', autoError: response.message });
+          get().pushLog(response.message, 'error');
+          return { commandId, ok: false, error: errorCodeFromReason(response.message), reason: response.message };
+        }
+
+        set({ status: 'ready', mode: 'idle', target: null, autoError: null });
+        get().pushLog(response.message, 'ok');
+        return {
+          commandId,
+          ok: true,
+          reachedTarget: true,
+          finalJoints: [...get().jointAngles],
+          finalEE: { ...get().eePosition },
+        };
       }
       case 'sequence': {
         set({ mode: 'auto', status: 'moving' });

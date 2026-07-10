@@ -11,6 +11,7 @@ import ViewerControls from '@/components/viewer/ViewerControls';
 import CartesianControls, { KeyTouchControls } from '@/components/viewer/CartesianControls';
 import Joystick from '@/components/controls/Joystick';
 import KeyboardJog from '@/components/controls/KeyboardJog';
+import PinEntryControls from '@/components/controls/PinEntryControls';
 import VoiceControls from '@/components/controls/VoiceControls';
 
 // The scene touches WebGL / window on mount, so it is client-only.
@@ -30,6 +31,7 @@ export default function Home() {
             <div className="topbar__sub">6-DOF stylus-arm simulator</div>
           </div>
         </div>
+        <div className="topbar__phase">Phase 4 — Autonomous PIN Entry</div>
         <div className="topbar__phase">Phase 3 — Talk to the Arm</div>
       </header>
 
@@ -44,6 +46,8 @@ export default function Home() {
           <JointSliders />
           <h2 className="panel__h">IK target</h2>
           <CartesianControls />
+          <h2 className="panel__h">Autonomous PIN</h2>
+          <PinEntryControls />
           <h2 className="panel__h">Test panel</h2>
           <KeyTouchControls />
           <h2 className="panel__h">Viewer</h2>

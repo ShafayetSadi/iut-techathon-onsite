@@ -304,9 +304,13 @@ export default function RobotScene() {
     // Route joint manipulation through the store — keep it the single source
     // of truth. The robot updates on the next render-loop tick.
     dragControls.updateJoint = (joint: URDFJoint, angle: number) => {
-      motion.getState().setJointByName(joint.name, angle);
+      const state = motion.getState();
+      if (state.mode === 'auto' && state.status === 'moving' && state.activePin !== null) return;
+      state.setJointByName(joint.name, angle);
     };
     dragControls.onHover = (joint: URDFJoint) => {
+      const state = motion.getState();
+      if (state.mode === 'auto' && state.status === 'moving' && state.activePin !== null) return;
       controls.enabled = false; // don't orbit while a joint is grabbable
       renderer.domElement.style.cursor = 'grab';
       viewer.getState().setHoveredJoint(joint.name);
@@ -325,13 +329,17 @@ export default function RobotScene() {
       clearHighlight();
     };
     dragControls.onDragStart = () => {
+      const state = motion.getState();
+      if (state.mode === 'auto' && state.status === 'moving' && state.activePin !== null) return;
       renderer.domElement.style.cursor = 'grabbing';
-      motion.getState().setMode('jog');
-      motion.getState().setStatus('moving');
+      state.setMode('jog');
+      state.setStatus('moving');
     };
     dragControls.onDragEnd = () => {
+      const state = motion.getState();
+      if (state.mode === 'auto' && state.status === 'moving' && state.activePin !== null) return;
       renderer.domElement.style.cursor = 'grab';
-      motion.getState().setStatus('ready');
+      state.setStatus('ready');
     };
 
     // ── Render loop ──────────────────────────────────────────────────────

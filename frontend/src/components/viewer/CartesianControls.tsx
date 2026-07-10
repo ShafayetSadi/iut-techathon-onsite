@@ -52,6 +52,7 @@ export default function CartesianControls() {
           className="btn"
           type="button"
           onClick={() => jog("z", JOG_STEP_M)}
+          disabled={status === "moving"}
         >
           Z+
         </button>
@@ -59,6 +60,7 @@ export default function CartesianControls() {
           className="btn"
           type="button"
           onClick={() => jog("y", JOG_STEP_M)}
+          disabled={status === "moving"}
         >
           Y+
         </button>
@@ -66,6 +68,7 @@ export default function CartesianControls() {
           className="btn"
           type="button"
           onClick={() => jog("x", JOG_STEP_M)}
+          disabled={status === "moving"}
         >
           X+
         </button>
@@ -73,6 +76,7 @@ export default function CartesianControls() {
           className="btn"
           type="button"
           onClick={() => jog("z", -JOG_STEP_M)}
+          disabled={status === "moving"}
         >
           Z-
         </button>
@@ -80,6 +84,7 @@ export default function CartesianControls() {
           className="btn"
           type="button"
           onClick={() => jog("y", -JOG_STEP_M)}
+          disabled={status === "moving"}
         >
           Y-
         </button>
@@ -87,6 +92,7 @@ export default function CartesianControls() {
           className="btn"
           type="button"
           onClick={() => jog("x", -JOG_STEP_M)}
+          disabled={status === "moving"}
         >
           X-
         </button>
