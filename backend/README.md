@@ -12,6 +12,15 @@ uv run uvicorn app.main:app --reload
 
 API docs are available at `http://localhost:8000/docs`.
 
+## Run With Docker Compose
+
+```bash
+cd ..
+docker compose up --build
+```
+
+The backend will be available at `http://localhost:8000`.
+
 ## Key Endpoints
 
 - `GET /health` - service status.
@@ -32,4 +41,3 @@ uv run python scripts/smoke_ik.py
 ```
 
 This solves IK for all six panel keys and prints the final stylus-tip error.
-

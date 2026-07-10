@@ -1,0 +1,24 @@
+name: iut-techathon-onsite
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: iut-techathon-robot-backend
+    ports:
+      - "8000:8000"
+    environment:
+      ROBOT_URDF_PATH: /app/6_dof_arm.urdf
+      ROBOT_PANEL_CONFIG_PATH: /app/key.config.json
+      ROBOT_IK_TOLERANCE_M: "0.005"
+    volumes:
+      - ./backend/app:/app/backend/app:ro
+      - ./6_dof_arm.urdf:/app/6_dof_arm.urdf:ro
+      - ./key.config.json:/app/key.config.json:ro
+    healthcheck:
+      test: ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
