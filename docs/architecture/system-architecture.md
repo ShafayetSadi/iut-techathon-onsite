@@ -1,109 +1,104 @@
-# System Architecture — Dry Run (6-DOF Stylus Arm)
+# System Architecture Deep Dive
 
-Derived from the code as it stands, not from the phase briefs. Where the code and the
-briefs disagree, this document follows the code and says so.
+This file is the detailed implementation reference for the current dry-run
+system. It complements the canonical overview in
+[`docs/architecture.md`](../architecture.md).
 
-The organizing principle, stated in the README and actually upheld by `lib/motion/`, is
-**one motion pipeline, five triggers**. Every input — dashboard sliders, joystick, keyboard,
-voice, autonomous PIN — produces a `MotionCommand`, then follows the same demo path:
-`trigger -> MotionCommand -> validate -> IK/planner -> trajectory -> apply joints`.
-Nothing writes joint angles except the motion store.
+Use this document when you need the runtime data flow, route-to-service
+structure, state ownership model, or the current technical caveats.
 
----
+## Scope
 
-## 1. Containers and deployment
+- `docs/architecture.md`: short, canonical system overview.
+- `docs/architecture/system-architecture.md`: contributor-facing implementation
+  deep dive.
 
-Two containers behind Docker Compose, plus one external SaaS dependency. The frontend
-container is gated on the backend's healthcheck, and the URDF and panel config are mounted
-read-only into the backend, which then *serves them to the browser* — the browser never
-reads them from disk.
+## 1. Deployment and external dependencies
+
+Two application containers run behind Docker Compose, while speech-to-text and
+agent reasoning are external API dependencies managed by the backend.
 
 ```mermaid
 flowchart TB
-    subgraph browser["Operator's browser"]
+    subgraph browser["Operator browser"]
         UI["Next.js app<br/>React + Three.js + Zustand"]
-        MIC["MediaRecorder<br/>push-to-talk mic"]
+        MIC["MediaRecorder<br/>push-to-talk or typed input"]
     end
 
-    subgraph compose["docker compose — iut-techathon-onsite"]
-        subgraph fe["frontend container :3000"]
-            NEXT["Next.js 14 standalone server"]
+    subgraph compose["docker compose"]
+        subgraph fe["frontend :3000"]
+            NEXT["Next.js standalone app"]
         end
 
-        subgraph be["backend container :8000"]
-            API["FastAPI + uvicorn"]
+        subgraph be["backend :8000"]
+            API["FastAPI + Uvicorn"]
         end
     end
 
-    subgraph assets["Read-only bind mounts"]
+    subgraph assets["Read-only mounted assets"]
         URDF["6_dof_arm.urdf"]
         KEYS["key.config.json"]
     end
 
-    EL["ElevenLabs<br/>speech-to-text API<br/>scribe_v1"]
+    STT["ElevenLabs STT"]
+    LLM["OpenRouter LLM"]
 
     UI -->|"HTTP :3000"| NEXT
-    UI -->|"REST /api/*  CORS *"| API
-    MIC -->|"audio blob"| UI
-    API -->|"multipart upload<br/>xi-api-key"| EL
-    URDF -.->|"/app/6_dof_arm.urdf"| API
-    KEYS -.->|"/app/key.config.json"| API
-    NEXT -.->|"depends_on: service_healthy"| API
-
-    classDef ext fill:#4a3a1a,stroke:#f2991a,color:#fff
-    classDef mount fill:#1e2a3a,stroke:#3a7bd5,color:#fff
-    class EL ext
-    class URDF,KEYS mount
+    UI -->|"REST /api/*"| API
+    MIC --> UI
+    API --> STT
+    API --> LLM
+    URDF -.-> API
+    KEYS -.-> API
+    NEXT -.->|"depends_on healthcheck"| API
 ```
 
-Two facts worth noting because they are easy to get wrong:
+Important current truths:
 
-The **ElevenLabs API key never reaches the browser.** Next.js inlines every `NEXT_PUBLIC_*`
-variable into the client bundle, so audio round-trips through the backend
-(`POST /api/voice/transcribe`) rather than the browser calling ElevenLabs directly. This is
-called out in both `core/config.py` and `voice/voiceApi.ts`.
+- The browser never receives the ElevenLabs or OpenRouter API keys.
+- The browser loads the URDF over `GET /api/robot/urdf`; it does not read the
+  model from disk directly.
+- `key.config.json` is served through backend routes rather than being treated
+  as a frontend-owned source.
 
-The **URDF is served over HTTP, not bundled.** `robot.config.ts` points `URDF_URL` at
-`${BACKEND_URL}/api/robot/urdf`, so the backend's mounted copy is the single source of truth
-for both the solver and the renderer.
+## 2. One motion pipeline, many triggers
 
----
-
-## 2. The motion pipeline — five triggers, one path
-
-This is the diagram that matters. Read it as: everything on the left produces a
-`MotionCommand`; the safety gate is unavoidable; `jointAngles` is the only authoritative
-arm state; the 3D robot is a *renderer* of that state, never an owner of it.
+Different controls change how a command is produced, not how motion is
+validated or executed.
 
 ```mermaid
 flowchart TB
-    subgraph triggers["Input triggers — the five, plus direct 3D drag"]
-        T1["JointSliders<br/>dashboard"]
+    subgraph triggers["Input triggers"]
+        T1["Joint sliders"]
         T2["Joystick"]
-        T3["KeyboardJog<br/>WASD / arrows"]
-        T4["VoiceControls<br/>push-to-talk"]
-        T5["KeyTouchControls<br/>PIN / panel"]
-        T6["PointerURDFDragControls<br/>drag a joint in 3D"]
+        T3["Keyboard jog"]
+        T4["Voice controls"]
+        T5["Key touch"]
+        T6["PIN entry"]
+        T7["3D drag"]
     end
 
-    JOG["useContinuousJog<br/>module-scope ticker<br/>80 ms · one request in flight"]
-    CMD["MotionCommand<br/>discriminated union"]
-    GATE{"validateCommand<br/>deterministic safety gate"}
+    JOG["useContinuousJog<br/>80 ms ticker"]
+    CMD["MotionCommand"]
+    GATE{"validateCommand"}
     STORE["useMotionStore.dispatch"]
 
-    subgraph auth["Authoritative state — Zustand"]
-        JA["jointAngles[7]<br/>radians"]
-        EE["eePosition<br/>base frame, meters"]
+    subgraph state["Frontend authoritative state"]
+        JA["jointAngles[7]"]
+        EE["eePosition"]
+        LOG["event log / status / mode"]
     end
 
-    subgraph render["Three.js host — RobotScene"]
-        LOOP["render loop<br/>60 fps, outside React"]
-        ROBOT["URDFRobot<br/>renderer only"]
-        FK["forwardKinematics<br/>stylus_tip world pos"]
+    subgraph render["RobotScene"]
+        ROBOT["URDF renderer"]
+        FK["forward kinematics readback"]
     end
 
-    BE["Backend IK<br/>/api/ik/solve · /api/motion/jog"]
-    DASH["Dashboard readouts<br/>JointReadout · EEReadout · EventLog"]
+    subgraph backend["Backend planners"]
+        IK["/api/ik/solve"]
+        JOGAPI["/api/motion/jog"]
+        PINAPI["/api/pin/sequence"]
+    end
 
     T2 --> JOG
     T3 --> JOG
@@ -111,154 +106,79 @@ flowchart TB
     T1 --> CMD
     T4 --> CMD
     T5 --> CMD
-    T6 -->|"writes store directly"| JA
+    T6 --> CMD
+    T7 -->|"direct setJoint"| JA
 
     CMD --> STORE
     STORE --> GATE
-    GATE -->|"rejected"| REJ["MotionResult<br/>ok: false + reason"]
-    GATE -->|"ok"| EXEC["execute"]
-
-    EXEC -->|"move_to · jog_cartesian · touch_key · enter_pin"| BE
-    EXEC -->|"set_joint · jog_joint · home · stop"| JA
-    BE -->|"joints + trajectory"| JA
-
-    JA --> LOOP
-    LOOP --> ROBOT
+    GATE -->|"reject"| LOG
+    GATE -->|"accept"| EXEC{"Execution path"}
+    EXEC -->|"local"| JA
+    EXEC -->|"IK target"| IK
+    EXEC -->|"cartesian jog"| JOGAPI
+    EXEC -->|"PIN sequence"| PINAPI
+    IK --> JA
+    JOGAPI --> JA
+    PINAPI --> JA
+    JA --> ROBOT
     ROBOT --> FK
     FK --> EE
-    JA --> DASH
-    EE --> DASH
-
-    classDef gate fill:#4a1a2a,stroke:#e94b6a,color:#fff
-    classDef state fill:#1a3a2a,stroke:#3ad57b,color:#fff
-    class GATE gate
-    class JA,EE state
+    JA --> LOG
+    EE --> LOG
 ```
 
-**The voice trigger now uses the shared dispatcher.** `VoiceControls.tsx` resolves the transcript
-into a command and, after the same deterministic gate passes, executes it through `dispatch()`.
-That keeps voice aligned with joystick, keyboard, and PIN control.
+Nuances that matter:
 
-**The 3D drag control is the one trigger that bypasses the gate**, writing `jointAngles`
-directly. That is safe only because `setJoint` clamps to the URDF limits on the way in —
-the clamp, not the gate, is what protects that path.
+- Voice commands use the same `dispatch()` path as other control surfaces after
+  transcript resolution.
+- Held joystick and keyboard input use the continuous jog ticker so they do not
+  flood the backend.
+- Direct 3D drag updates joints locally and depends on frontend clamping rather
+  than the backend path.
 
----
+## 3. Backend layering
 
-## 3. Command and result contracts
-
-`commands.ts` is the cross-team interface. Every trigger produces the union on the left;
-every dispatch returns the record on the right.
-
-```mermaid
-classDiagram
-    class MotionCommand {
-        <<union>>
-    }
-    class jog_cartesian {
-        delta: Vec3
-        frame: world or tool
-        continuous: bool
-    }
-    class move_to {
-        target: Vec3
-        approach: Vec3
-    }
-    class set_joint {
-        joint: int
-        value: rad
-    }
-    class jog_joint {
-        joint: int
-        delta: rad
-    }
-    class touch_key {
-        key: string
-    }
-    class sequence {
-        steps: List~MotionCommand~
-    }
-    class home
-    class stop
-
-    class MotionResult {
-        commandId: string
-        ok: bool
-        reachedTarget: bool
-        finalJoints: List~number~
-        finalEE: Vec3
-        error: MotionErrorCode
-        reason: string
-    }
-
-    class MotionErrorCode {
-        <<enumeration>>
-        unreachable
-        joint_limit
-        workspace_bounds
-        malformed
-        cancelled
-    }
-
-    MotionCommand <|-- jog_cartesian
-    MotionCommand <|-- move_to
-    MotionCommand <|-- set_joint
-    MotionCommand <|-- jog_joint
-    MotionCommand <|-- touch_key
-    MotionCommand <|-- sequence
-    MotionCommand <|-- home
-    MotionCommand <|-- stop
-    sequence o-- MotionCommand : recurses
-    MotionResult ..> MotionErrorCode
-```
-
-`reason` is human-readable on purpose — it is what a spoken or agentic feedback layer reads
-back to the operator when a command is refused.
-
----
-
-## 4. Backend layering
-
-FastAPI routes are thin. Everything is constructed once via `@lru_cache` singletons in
-`dependencies.py`, so the URDF is parsed exactly once per process.
+FastAPI routes are thin. Service objects are created via `@lru_cache` in
+`backend/app/dependencies.py`, so the URDF is parsed once per process and
+shared across requests.
 
 ```mermaid
 flowchart TB
-    subgraph routes["app/api — routers, thin"]
-        R1["routes_ik<br/>POST /api/ik/solve"]
-        R2["routes_motion<br/>POST /api/motion/jog"]
-        R3["routes_panel<br/>GET /api/panel/keys, /config"]
-        R4["routes_robot<br/>GET /api/robot/model, /state, /urdf"]
-        R5["routes_voice<br/>POST /api/voice/transcribe"]
-        R6["routes_pin<br/>POST /api/pin/sequence"]
-        R7["routes_hardware<br/>GET /api/hardware/schematic"]
-        R8["routes_health<br/>GET /health"]
-        R9["websocket_state<br/>WS /ws/state · 5 Hz"]
+    subgraph routes["app/api routers"]
+        R1["routes_health"]
+        R2["routes_robot"]
+        R3["routes_ik"]
+        R4["routes_motion"]
+        R5["routes_panel"]
+        R6["routes_pin"]
+        R7["routes_voice"]
+        R8["routes_agent"]
+        R9["routes_hardware"]
+        R10["websocket_state"]
     end
 
-    subgraph deps["app/dependencies — lru_cache singletons"]
-        D["get_robot_model · get_motion_planner<br/>get_state_store · get_panel_service<br/>get_voice_service · get_pin_service"]
+    subgraph deps["dependencies.py singletons"]
+        D["robot model, planner, state store,<br/>panel, pin, voice, agent, hardware"]
     end
 
     subgraph domain["Domain services"]
-        MP["MotionPlanner<br/>solve_target · jog"]
-        SV["SafetyValidator<br/>radius ≤ 1.7 m · z ∈ [-0.25, 1.6]"]
-        IK["IKSolver<br/>damped least squares"]
-        TRAJ["build_joint_trajectory<br/>30 pts · smoothstep · 1200 ms"]
-        SS["RobotStateStore"]
-        PS["PanelService"]
-        VS["VoiceService"]
-        PIN["PinService — scaffold"]
-        HW["HardwareService — scaffold"]
+        MP["MotionPlanner"]
+        SV["SafetyValidator"]
+        IKS["IKSolver"]
+        TRAJ["trajectory builder"]
+        STATE["RobotStateStore"]
+        PANEL["PanelService"]
+        PIN["PinService"]
+        VOICE["VoiceService"]
+        AGENT["AgentService + AgentCompiler"]
+        HW["HardwareService"]
     end
 
-    subgraph robot["app/robot — kinematics core"]
-        UL["urdf_loader<br/>XML → RobotModel + chain"]
-        KIN["kinematics<br/>forward_kinematics<br/>numerical_jacobian"]
-        LIM["limits<br/>clamp_joint_map"]
+    subgraph model["Robot model"]
+        URDFL["urdf_loader"]
+        KIN["kinematics"]
+        LIM["limits"]
     end
-
-    ERR["RobotBackendError → HTTP 400<br/>ValidationError · KinematicsError"]
 
     R1 --> D
     R2 --> D
@@ -267,327 +187,224 @@ flowchart TB
     R5 --> D
     R6 --> D
     R7 --> D
+    R8 --> D
     R9 --> D
+    R10 --> D
 
     D --> MP
-    D --> SS
-    D --> PS
-    D --> VS
+    D --> STATE
+    D --> PANEL
     D --> PIN
+    D --> VOICE
+    D --> AGENT
     D --> HW
 
     MP --> SV
-    MP --> IK
+    MP --> IKS
     MP --> TRAJ
-    IK --> KIN
-    IK --> LIM
-    TRAJ --> KIN
-    SS --> KIN
-    MP --> UL
-    KIN --> UL
-    LIM --> UL
-
-    SV -.->|"raises"| ERR
-    UL -.->|"raises"| ERR
-    VS -.->|"raises"| ERR
-
-    classDef scaffold fill:#2a2a2a,stroke:#777,color:#aaa,stroke-dasharray:4 3
-    classDef err fill:#4a1a2a,stroke:#e94b6a,color:#fff
-    class PIN,HW scaffold
-    class ERR err
+    IKS --> KIN
+    IKS --> LIM
+    KIN --> URDFL
+    LIM --> URDFL
+    STATE --> KIN
+    PIN --> PANEL
+    PIN --> MP
+    AGENT --> PANEL
+    AGENT --> MP
 ```
 
----
+## 4. Core backend routes
 
-## 5. A Cartesian jog, end to end
+| Route | Live behavior |
+| --- | --- |
+| `GET /health` | Healthcheck used by local/dev runtime and Compose. |
+| `GET /api/robot/model` | Returns robot metadata, controlled joints, limits, and neutral pose. Mostly useful for tests and debugging. |
+| `GET /api/robot/state` | Returns the backend's in-memory joint/TCP snapshot. |
+| `GET /api/robot/urdf` | Returns the mounted URDF XML served inline to the browser. |
+| `POST /api/ik/solve` | Solves a target position and updates backend state on success. |
+| `POST /api/motion/jog` | Builds a jog target from current tip plus delta and updates backend state on success. |
+| `GET /api/panel/config` | Returns raw panel configuration for the scene. |
+| `GET /api/panel/keys` | Returns typed key coordinates for control logic. |
+| `POST /api/pin/sequence` | Plans approach, touch, and retract waypoints for each PIN digit. |
+| `POST /api/voice/transcribe` | Sends uploaded audio to `VoiceService`, which then calls ElevenLabs STT. |
+| `POST /api/agent/interpret` | Uses OpenRouter to draft semantic steps, then compiles them into deterministic commands. |
+| `GET /api/hardware/schematic` | Returns hardware checklist metadata only. |
+| `WS /ws/state` | Streams the backend state snapshot every 0.2 seconds. |
 
-The most-exercised path in the app: a joystick deflection becomes an IK solve and a new pose.
-Note the two rate-limiting mechanisms — the ticker's in-flight gate on the client, and the
-`continuous: true` flag that suppresses trajectory animation so held-down jogs stay responsive.
+## 5. IK and cartesian jog flow
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant J as Joystick / Keyboard
-    participant T as useContinuousJog<br/>module ticker
-    participant S as motionStore
-    participant V as validateCommand
-    participant A as backendApi
-    participant R as routes_motion
-    participant P as MotionPlanner
-    participant SV as SafetyValidator
-    participant IK as IKSolver
-    participant SC as RobotScene loop
+    participant Input as Joystick / Keyboard / IK target
+    participant Store as useMotionStore
+    participant Gate as validateCommand
+    participant API as backendApi.ts
+    participant Route as FastAPI route
+    participant Planner as MotionPlanner
+    participant Safety as SafetyValidator
+    participant Solver as IKSolver
+    participant Scene as RobotScene
 
-    J->>T: setVector({x,y,z}) in [-1,1]
-    Note over T: tick every 80 ms<br/>skip while a request is in flight
-    T->>S: dispatch(jog_cartesian, continuous: true)
-    S->>V: validateCommand(cmd)
-    V-->>S: ok (finite delta)
-    S->>A: POST /api/motion/jog<br/>{delta, currentJoints}
-    A->>R: HTTP
-    R->>P: planner.jog(currentJoints, delta)
-    P->>P: clamp_joint_map(current)
-    P->>P: forward_kinematics → current tip
-    P->>P: target = tip + delta
-    P->>SV: validate_target(target)
-    alt outside workspace
-        SV-->>R: ValidationError
-        R-->>A: 400 {success: false, reason}
-        A-->>S: throw
-        S->>S: status = error, log rejection
-    else inside workspace
-        SV-->>P: ok
-        P->>IK: solve(target, seed = current)
-        loop ≤ 300 iters, up to 8 seeds
-            IK->>IK: J = numerical_jacobian (3×7)
-            IK->>IK: Δq = Jᵀ(JJᵀ + λ²I)⁻¹ e
-            IK->>IK: clip Δq to ±0.18, clamp to limits
-        end
-        IK-->>P: joints, tip, errorMeters, iterations
-        P->>P: build_joint_trajectory (30 pts)
-        P-->>R: IKSolveResponse
-        R->>R: state_store.set_joints(joints)
-        R-->>A: 200 {success, joints, tip, trajectory}
-        A-->>S: IkResponse
-        Note over S: continuous → animateTrajectory: false<br/>trajectory skipped, snap to final
-        S->>S: setJoints(joints), setEEPosition(tip)
+    Input->>Store: dispatch(command)
+    Store->>Gate: validateCommand(command)
+    Gate-->>Store: pass or reject
+
+    alt requires backend solve
+        Store->>API: POST /api/ik/solve or /api/motion/jog
+        API->>Route: HTTP request
+        Route->>Planner: solve_target or jog
+        Planner->>Safety: validate target
+        Safety-->>Planner: accept or raise
+        Planner->>Solver: solve(target, current_joints)
+        Solver-->>Planner: joints, tip, error, trajectory
+        Planner-->>Route: response model
+        Route-->>API: JSON
+        API-->>Store: typed response
+        Store->>Store: apply trajectory or snap to final joints
+    else local command
+        Store->>Store: update joints/status only
     end
-    SC->>S: read jointAngles each frame
-    SC->>SC: applyJoints → updateMatrixWorld → FK
-    SC->>S: setEEPosition(tip) if moved > 0.1 mm
+
+    Store->>Scene: jointAngles changed
+    Scene->>Scene: apply joints and compute FK
+    Scene->>Store: update eePosition
 ```
 
-The solver is **position-only** (a 3×7 Jacobian, not 6×7), so orientation is unconstrained.
-That is why `_build_seeds` tries seven fixed elbow-up/elbow-down postures in addition to the
-current pose: with a redundant arm and no orientation constraint, a single seed from a
-singular neutral pose converges unreliably.
+Current solver facts:
 
----
+- The solver is position-only, not full-pose constrained.
+- It uses damped least squares with multiple seed postures.
+- The backend clamps joint maps to URDF limits during solving.
+- Continuous jogs can skip trajectory animation so repeated inputs stay
+  responsive.
 
-## 6. The voice pipeline
+## 6. PIN flow
 
-Speech-to-text is the *only* part of voice that lives on the backend. The matcher runs in the
-browser, deliberately: `MotionCommand`, `validateCommand`, and `JOINTS` are already defined in
-TypeScript, and mirroring them in Pydantic would create two definitions to drift apart.
+Older notes described PIN planning as a scaffold. That is now stale.
+`PinService.plan_sequence()` is implemented and plans the sequence digit by
+digit through the shared motion planner.
+
+```mermaid
+sequenceDiagram
+    participant UI as PIN controls
+    participant Route as POST /api/pin/sequence
+    participant Pin as PinService
+    participant Panel as PanelService
+    participant Planner as MotionPlanner
+
+    UI->>Route: pin + currentJoints
+    Route->>Pin: plan_sequence(request)
+    Pin->>Panel: get_keys()
+    Panel-->>Pin: keypad coordinates
+
+    loop each digit
+        Pin->>Planner: solve approach target
+        Planner-->>Pin: approach result
+        Pin->>Planner: solve touch target with 5 mm tolerance
+        Planner-->>Pin: touch result
+        Pin->>Planner: solve retract target
+        Planner-->>Pin: retract result
+    end
+
+    Pin-->>Route: per-digit steps + overall success/failure
+    Route-->>UI: PinSequenceResponse
+```
+
+The key constraint is not just solve success. A touch counts only if the
+reported tip error stays within the 5 mm tolerance.
+
+## 7. Voice and agent flow
+
+Voice is a two-stage system:
+
+1. Speech capture and transcription.
+2. Deterministic matching first, then agent escalation for ambiguity or
+   compound intent.
 
 ```mermaid
 flowchart TB
-    PTT["Hold to speak"] --> MR["useSpeechCapture<br/>MediaRecorder<br/>webm/opus"]
-    MR -->|"Blob"| VA["transcribeClip<br/>multipart POST"]
-    VA --> BE["POST /api/voice/transcribe"]
-    BE --> VSVC["VoiceService<br/>≤ 10 MB · 30 s timeout"]
-    VSVC --> EL["ElevenLabs scribe_v1"]
-    EL -->|"text"| VSVC
-    VSVC -->|"TranscriptionResponse<br/>nothing stored"| VS2["voiceStore.resolveTranscript"]
+    Speech["Speech or typed text"] --> STT["POST /api/voice/transcribe"]
+    STT --> Transcript["resolved transcript"]
+    Transcript --> Match["matcher.ts + grammar.ts"]
 
-    VS2 --> M1["normalize<br/>lowercase · strip punct<br/>phrases · synonyms · filler<br/>number words → digits"]
-    M1 --> M2["skeletonize<br/>numbers → placeholder<br/>captured as params"]
-    M2 --> STOPCHK{"isStop?<br/>Levenshtein ≥ 0.60"}
-    STOPCHK -->|"yes"| STOPCMD["stop command<br/>never lost to a threshold"]
-    STOPCHK -->|"no"| SCORE["score vs ~120 templates<br/>Levenshtein ratio"]
+    Match -->|"clear deterministic match"| Cmd["MotionCommand"]
+    Match -->|"ambiguous / unmatched / pending plan"| Agent["POST /api/agent/interpret"]
 
-    SCORE --> DEC{"decide"}
-    DEC -->|"best below 0.90"| UNM["unmatched"]
-    DEC -->|"margin under 0.05"| AMB["ambiguous<br/>ask, do not guess"]
-    DEC -->|"clear winner"| BUILD["template.build(params)"]
-    BUILD -->|"params out of domain"| UNM
-    BUILD --> GATE2["validateCommand<br/>same gate as every trigger"]
+    Agent --> Draft["AgentService drafts semantic plan<br/>via OpenRouter"]
+    Draft --> Compile["AgentCompiler compiles plan<br/>into deterministic commands"]
+    Compile --> Cmd
 
-    GATE2 --> RES["Resolution<br/>command + confidence + gate verdict"]
-    STOPCMD --> RES
-    RES --> TL["TranscriptLog<br/>displayed only"]
-    RES --> DISP["motionStore.dispatch"]
-
-    classDef gate fill:#4a1a2a,stroke:#e94b6a,color:#fff
-    classDef ext fill:#4a3a1a,stroke:#f2991a,color:#fff
-    classDef dormant fill:#2a2a2a,stroke:#777,color:#aaa,stroke-dasharray:4 3
-    class GATE2,STOPCHK gate
-    class EL ext
-    class DISP dormant
+    Cmd --> Gate["validateCommand"]
+    Gate --> Dispatch["useMotionStore.dispatch"]
 ```
 
-Three decisions in `matcher.ts` are load-bearing and worth preserving:
+Important current behavior:
 
-Numbers are extracted **before** scoring. `"rotate base 30 degrees"` and
-`"rotate base 45 degrees"` are ~92% similar as raw strings, so a flat 90% threshold would
-match one against the other's template and silently discard the argument.
+- STT lives on the backend because secrets must stay off the client.
+- The deterministic matcher still gets first chance.
+- The agent does not directly actuate anything; it returns a command or
+  sequence that must still pass the normal motion pipeline.
+- Clarification turns are supported through `pendingPlan` state in the frontend
+  voice store.
 
-A near-tie is **a question, not a guess.** If the runner-up is within 0.05 of the winner the
-matcher returns `ambiguous` rather than picking.
+## 8. State ownership
 
-`stop` short-circuits before any scoring, at a much looser 0.60 threshold. A stop lost to a
-clipped phoneme is the one failure in this grammar with real consequences; a spurious stop
-is harmless.
-
----
-
-## 7. State ownership
-
-The invariant the codebase enforces: **one authoritative store, everything else derives.**
-
-```mermaid
-flowchart TB
-    subgraph fe["Frontend"]
-        MS["motionStore<br/>jointAngles · eePosition · mode · status · log"]
-        VS["voiceStore<br/>transcripts + resolutions"]
-        VW["viewerStore<br/>display prefs only"]
-        ROB["URDFRobot<br/>derived · renderer"]
-        DASH["Dashboard<br/>derived · subscribers"]
-    end
-
-    subgraph be["Backend"]
-        RSS["RobotStateStore<br/>joints + FK tip"]
-        RM["RobotModel<br/>immutable, parsed once"]
-    end
-
-    MS -->|"authoritative"| ROB
-    MS --> DASH
-    ROB -->|"FK writes back"| MS
-    VS -.->|"records what was said,<br/>not a fact about the arm"| MS
-    VW -.->|"never touches arm state"| ROB
-
-    IKR["/api/ik/solve"] -->|"set_joints"| RSS
-    JOGR["/api/motion/jog"] -->|"set_joints"| RSS
-    RSS -.->|"read by /api/robot/state<br/>and WS /ws/state"| DEAD["No frontend consumer"]
-    RM --> RSS
-
-    classDef auth fill:#1a3a2a,stroke:#3ad57b,color:#fff
-    classDef dormant fill:#2a2a2a,stroke:#777,color:#aaa,stroke-dasharray:4 3
-    class MS auth
-    class DEAD,RSS dormant
-```
-
-The backend's `RobotStateStore` is currently **write-only**. `/api/ik/solve` and
-`/api/motion/jog` both update it, but no frontend code opens `/ws/state` or reads
-`/api/robot/state` — the browser treats each solve as a pure function and keeps the pose
-itself. That is a coherent design (the client owns the pose, the server owns the math), but
-it means the WebSocket and the state endpoints are presently unexercised, and a second
-connected client would not see the first one's motion.
-
----
-
-## 8. API surface, and what is actually wired
+The frontend and backend both hold state, but they play different roles.
 
 ```mermaid
 flowchart LR
-    subgraph live["Consumed by the frontend"]
-        A1["GET /api/robot/urdf<br/>→ urdfLoad.ts"]
-        A2["GET /api/panel/config<br/>→ keyConfig.ts"]
-        A3["GET /api/panel/keys<br/>→ backendApi.getPanelKeyPosition"]
-        A4["POST /api/ik/solve<br/>→ move_to, touch_key"]
-        A5["POST /api/motion/jog<br/>→ jog_cartesian"]
-        A6["POST /api/voice/transcribe<br/>→ voiceApi.ts"]
+    subgraph frontend["Frontend"]
+        MS["motionStore<br/>authoritative visible pose"]
+        VS["voiceStore<br/>transcripts and agent context"]
+        VIEW["viewerStore<br/>display preferences"]
+        SCENE["RobotScene"]
     end
 
-    subgraph infra["Infrastructure"]
-        A7["GET /health<br/>→ compose healthcheck"]
+    subgraph backend["Backend"]
+        RSS["RobotStateStore<br/>in-memory snapshot"]
     end
 
-    subgraph unwired["Implemented, no caller"]
-        B1["GET /api/robot/model"]
-        B2["GET /api/robot/state"]
-        B3["WS /ws/state"]
-    end
-
-    subgraph scaffold["Scaffold — returns a placeholder"]
-        C1["POST /api/pin/sequence<br/>success: false"]
-        C2["GET /api/hardware/schematic<br/>checklist metadata"]
-    end
-
-    classDef ok fill:#1a3a2a,stroke:#3ad57b,color:#fff
-    classDef dormant fill:#2a2a2a,stroke:#777,color:#aaa,stroke-dasharray:4 3
-    classDef scaf fill:#4a3a1a,stroke:#f2991a,color:#fff
-    class A1,A2,A3,A4,A5,A6,A7 ok
-    class B1,B2,B3 dormant
-    class C1,C2 scaf
+    MS --> SCENE
+    SCENE --> MS
+    VS -. context only .-> MS
+    VIEW -. display only .-> SCENE
+    MS -->|"backend-planned moves"| RSS
 ```
 
----
+The frontend `motionStore` is still the source of truth for what the operator
+sees. The backend `RobotStateStore` mirrors successful backend-planned moves and
+supports `/api/robot/state` and `/ws/state`, but the current frontend does not
+depend on those endpoints for rendering.
 
-## 9. Safety, in layers
-
-Safety is checked more than once, in different places, for different reasons. This is
-intentional but the layers are not identical, and the gaps are where bugs will live.
+## 9. Safety layers
 
 ```mermaid
 flowchart TB
-    IN["A command"] --> L1
-
-    subgraph L1["Layer 1 — frontend safety gate · validate.ts"]
-        L1A["joint index in range · finite values"]
-        L1B["set_joint within JOINT_LIMITS"]
-        L1C["move_to within MAX_REACH_M = 1.7"]
-        L1D["sequence recurses into every step"]
-    end
-
-    L1 -->|"rejected"| OUT1["MotionResult ok: false<br/>logged, spoken, never sent"]
-    L1 -->|"passed"| L2
-
-    subgraph L2["Layer 2 — frontend clamp · store.setJoint"]
-        L2A["clamp to JOINT_LIMITS on every write"]
-        L2B["ignoreLimits widens the clamp to ±2π<br/>for manual drag only"]
-    end
-
-    L2 --> L3
-
-    subgraph L3["Layer 3 — backend safety · SafetyValidator"]
-        L3A["finite coordinates"]
-        L3B["‖target‖ ≤ workspace_radius_m = 1.7"]
-        L3C["min_z ≤ z ≤ max_z  ·  [-0.25, 1.6]"]
-    end
-
-    L3 --> L4
-
-    subgraph L4["Layer 4 — solver clamp · limits.py"]
-        L4A["clamp_joint_map on the seed"]
-        L4B["clamp every IK iterate to URDF limits"]
-        L4C["Δq clipped to ±0.18 rad per iteration"]
-    end
-
-    L4 --> MOVE["Pose accepted"]
-
-    classDef gate fill:#4a1a2a,stroke:#e94b6a,color:#fff
-    class L1,L3 gate
+    Command --> FrontendGate["Frontend validateCommand"]
+    FrontendGate --> FrontendClamp["Frontend joint clamp on writes"]
+    FrontendClamp --> BackendGate["Backend SafetyValidator"]
+    BackendGate --> IKClamp["IK iterate clamp to URDF limits"]
+    IKClamp --> Accepted["motion accepted"]
 ```
 
-Two asymmetries fall out of reading these side by side:
+What each layer covers today:
 
-**`jog_joint` and `jog_cartesian` are not bounds-checked at layer 1.** `validate.ts` checks
-only that the delta is finite; the comment says the absolute limit is enforced when the delta
-is applied, which is true for `jog_joint` (via the clamp) but means a `jog_cartesian` delta
-is only bounds-checked once it reaches `SafetyValidator` on the backend.
+- `validate.ts`: malformed values, joint index/range issues, obvious workspace
+  overreach, invalid PIN shapes, and command-structure problems.
+- `store.ts`: clamps direct joint writes to configured limits, with a widened
+  viewer-only range when `ignoreLimits` is enabled for drag interaction.
+- `SafetyValidator`: finite cartesian target checks plus workspace radius and Z
+  bounds.
+- IK iteration limits: every iterate is clipped and clamped to URDF limits.
 
-**The frontend has no z-bound.** `MAX_REACH_M = 1.7` mirrors `workspace_radius_m`, but
-nothing on the client mirrors `min_z_m` / `max_z_m`. A `move_to` at `z = -1.0` passes layer 1
-and is refused at layer 3 — correct, but the rejection costs a round-trip and surfaces as a
-backend error rather than a local one.
+## 10. Current limitations
 
-**`ignoreLimits` is a viewer affordance, not a safety switch.** It widens the clamp for
-dragging, but `validateCommand` still enforces the real URDF limits on every dispatched
-command. The gate is not weakened by it.
-
----
-
-## 10. Known gaps
-
-These are the seams left open in the code, listed so the diagram above is not read as a
-description of a finished system.
-
-The **PIN sequencing service is a scaffold.** `PinService.plan_sequence` returns
-`success: false` with a message saying approach/touch/retract trajectories land after Phase 2
-IK is connected. The frontend has `sequence` and `touch_key` commands that work, so PIN entry
-can be composed client-side without the backend endpoint.
-
-**Voice executes through the same dispatcher.** Resolved voice commands pass through the
-same `dispatch()` path used by joystick, keyboard, and PIN actions.
-
-**The keyboard and voice frames disagree.** `KeyboardJog`'s `AXIS_KEYS` maps `ArrowUp → +y`
-(a top-down map metaphor); `grammar.ts` maps spoken "forward" to `+x` and "up" to `+z`
-(ROS REP-103, robot-centric). Arrow-keying the arm and then saying "move left" move the tip
-along different axes. The phase-3 brief recommends changing `AXIS_KEYS`.
-
-**IK is position-only.** Orientation of the stylus is not constrained, so `approach_axis`
-from `key.config.json` is currently rendered and reasoned about but not enforced by the
-solver — a key press lands the tip at the coordinate without guaranteeing it arrives from
-`-z`.
+- The hardware route is still documentation/checklist metadata, not a live
+  hardware controller.
+- The system does not persist arm state across backend restarts.
+- The websocket stream exists, but the current UI does not use it for
+  rendering.
+- Stylus orientation is not yet a hard IK objective.
+- This remains a simulator/demo architecture, not a real-time industrial
+  control stack.

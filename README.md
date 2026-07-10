@@ -72,18 +72,18 @@ Live: http://137.184.201.76:3000/
 
 ```mermaid
 flowchart LR
-    UI[UI triggers<br/>dashboard, joystick,<br/>keyboard, voice, PIN]
-    Store[Motion Store<br/>Zustand: jointAngles,<br/>eePosition, …]
+    UI[Controls<br/>manual, voice, PIN]
+    Store[Motion Store<br/>jointAngles, eePosition]
     Validate{validate}
-    Adapter[Robot Adapter<br/>applies joints,<br/>computes FK]
-    URDF[URDF robot]
-    Dashboard[Dashboard]
+    Scene[Scene + FK]
+    URDF[URDF]
+    Dashboard[Readouts]
 
-    UI -->|dispatch command| Store
+    UI -->|dispatch| Store
     Store --> Validate
-    Validate --> Adapter
-    Adapter --> URDF
-    Store -.subscribes.- Dashboard
+    Validate --> Scene
+    Scene --> URDF
+    Store --> Dashboard
 ```
 
 - `jointAngles` in the store is the **only** authoritative arm state; the URDF
@@ -99,9 +99,10 @@ flowchart LR
   directly comparable with no conversion — the mitigation for the classic
   frame-mismatch bug.
 
-Full component/sequence diagrams (system context, backend module diagram, PIN
-sequencing, deployment topology) live in
+Canonical architecture overview:
 [docs/architecture.md](docs/architecture.md).
+Detailed implementation diagrams and runtime notes:
+[docs/architecture/system-architecture.md](docs/architecture/system-architecture.md).
 
 ### Operator workflow
 
@@ -111,45 +112,32 @@ the rendered result. Full detail (including the PIN-entry sequence) lives in
 
 ```mermaid
 flowchart TD
-    Start([Operator opens the app]) --> Load[Frontend loads robot model + panel config<br/>GET /api/robot/model, /api/panel/config]
-    Load --> ChooseMode{Select control mode<br/>in ControlSidebar}
+    Start([Open app]) --> Mode{Mode}
 
-    ChooseMode -->|Manual| Manual[Joystick / Keyboard jog /<br/>IK target / Joint sliders]
-    ChooseMode -->|Panel| Panel[Autonomous PIN entry<br/>or manual key touch]
-    ChooseMode -->|Voice| Voice[Speak a command]
+    Mode -->|Manual| Manual[Joystick, keyboard,<br/>IK, sliders]
+    Mode -->|Panel| Panel[PIN or key touch]
+    Mode -->|Voice| Voice[Speech or typed command]
 
-    Voice --> STT[Audio -> POST /api/voice/command<br/>-> ElevenLabs STT]
-    STT --> Parse[matcher.ts / grammar.ts parse<br/>transcript into a MotionCommand]
-
+    Voice --> STT[Transcribe + match]
     Manual --> Command[MotionCommand]
     Panel --> Command
-    Parse --> Command
+    STT --> Command
 
-    Command --> Dispatch[dispatch to Zustand Motion Store]
-    Dispatch --> FValidate{Frontend<br/>validateCommand}
+    Command --> FValidate{Frontend validate}
+    FValidate -->|reject| LogError[Event log error]
+    FValidate -->|accept| NeedsBackend{Backend solve?}
 
-    FValidate -->|reject| LogError[Typed error in Event Log]
-    FValidate -->|accept| NeedsBackend{Needs IK /<br/>cartesian planning?}
+    NeedsBackend -->|No| LocalUpdate[Update store]
+    NeedsBackend -->|Yes| BackendCall[IK / jog / PIN API]
 
-    NeedsBackend -->|No: home / stop / absolute joint| LocalUpdate[Update store state directly]
-    NeedsBackend -->|Yes| BackendCall[POST /api/ik/solve,<br/>/api/motion/jog, or /api/pin/sequence]
+    BackendCall --> BValidate{Backend safety}
+    BValidate -->|reject| LogError
+    BValidate -->|accept| Plan[IK + trajectory]
+    Plan --> LocalUpdate
 
-    BackendCall --> BValidate{Backend<br/>SafetyValidator}
-    BValidate -->|reject| APIError[HTTP error response] --> LogError
-    BValidate -->|accept| IKSolve[IKSolver: damped least squares<br/>over FK / Jacobian]
-
-    IKSolve -->|converged| Trajectory[Build joint trajectory]
-    IKSolve -->|failed| PlanFail[Return failure reason] --> LogError
-
-    Trajectory --> UpdateState[Update backend RobotStateStore]
-    UpdateState --> ReturnPlan[Return joints, TCP, trajectory<br/>to frontend]
-    ReturnPlan --> LocalUpdate
-
-    LocalUpdate --> AnimateScene[RobotScene applies joint angles<br/>to the URDF model, frame by frame]
-    AnimateScene --> FK[Compute forward kinematics]
-    FK --> WriteEE[Write end-effector position<br/>back to the store]
-    WriteEE --> Dashboard[Dashboard updates:<br/>JointReadout, EEReadout,<br/>ModeStatus, EventLog]
-    Dashboard --> ChooseMode
+    LocalUpdate --> Scene[Render arm + FK]
+    Scene --> Dashboard[Update readouts]
+    Dashboard --> Mode
 ```
 
 ### Agentic Voice Control (Phase 3B)
@@ -161,36 +149,30 @@ layer only ever *proposes* a plan — it never touches the robot directly.
 
 ```mermaid
 flowchart TD
-    Speech[Speech or typed text] --> STT[ElevenLabs STT<br/>if spoken]
-    STT --> Matcher[Deterministic matcher<br/>matcher.ts / grammar.ts]
+    Speech[Speech or text] --> Matcher[STT + deterministic matcher]
     Matcher -->|matched| Command[MotionCommand]
+    Matcher -->|ambiguous / compound| AgentAPI[/api/agent/interpret]
 
-    Matcher -->|unmatched / ambiguous /<br/>pending clarification| AgentAPI[POST /api/agent/interpret]
+    AgentAPI --> LLM[OpenRouter + tools]
+    LLM --> Draft[Draft plan]
 
-    AgentAPI --> AgentService[AgentService.interpret<br/>backend/app/agent/service.py]
-    AgentService <-->|tool calls: get_robot_context,<br/>get_panel_geometry| LLM[OpenRouter LLM<br/>google/gemini-2.5-flash]
-    LLM --> Draft[AgentDraft: confirmation +<br/>semantic steps + optional<br/>clarifying question]
-
-    Draft -->|any step ambiguous| Clarify[needs_clarification:<br/>no command produced,<br/>ask operator]
+    Draft -->|needs clarification| Clarify[Ask operator]
     Clarify -.next turn.-> AgentAPI
 
-    Draft -->|all steps resolved| Compiler[AgentCompiler.compile<br/>backend/app/agent/compiler.py]
-    Compiler --> Expand[Expand semantic actions into<br/>PhysicalCommands<br/>e.g. press_key -> approach/touch/retract]
-    Expand --> Preflight[Preflight every step through<br/>MotionPlanner.jog / solve_target<br/>-> backend SafetyValidator]
-    Preflight -->|fails| Rejected[status: rejected<br/>+ failureReason]
-    Preflight -->|passes| SequenceCmd[SequenceCommand returned<br/>to frontend]
+    Draft -->|resolved| Compiler[Compile + preflight]
+    Compiler -->|fails| Rejected[Reject plan]
+    Compiler -->|passes| Sequence[SequenceCommand]
 
-    SequenceCmd --> Guard[agentExecutionToken mutex<br/>blocks interleaving commands]
-    Guard --> Dispatch[dispatch to Zustand Motion Store]
-    Command --> Dispatch
-    Dispatch --> FValidate[validateCommand<br/>same gate as every other trigger]
-    FValidate -->|reject| LogError[Typed error in Event Log]
-    FValidate -->|accept| Execute[Execute motion, step by step]
+    Command --> Dispatch[Dispatch]
+    Sequence --> Dispatch
+    Dispatch --> Validate[Shared safety gate]
+    Validate -->|reject| LogError[Event log]
+    Validate -->|accept| Execute[Execute steps]
 
-    Execute --> Speak[speak.ts: describeOutcome<br/>-> Web Speech API TTS]
+    Execute --> Speak[Voice response]
     Rejected --> Speak
     Clarify --> Speak
-    Speak --> Chat[VoiceChat panel:<br/>confirmation, steps, outcome]
+    Speak --> Chat[VoiceChat]
 ```
 
 - **Reasoning layer** (`backend/app/agent/service.py`) calls an LLM over
@@ -388,9 +370,11 @@ Automated coverage:
 
 ## Component Docs
 
-- [docs/architecture.md](docs/architecture.md) — full system architecture:
-  context diagram, backend module diagram, motion/PIN sequence diagrams,
-  state ownership, API surface, deployment topology, current limitations.
+- [docs/architecture.md](docs/architecture.md) — canonical high-level system
+  architecture overview.
+- [docs/architecture/system-architecture.md](docs/architecture/system-architecture.md)
+  — detailed implementation architecture: motion pipeline, backend layering,
+  state ownership, route wiring, and current limitations.
 - [docs/workflow.md](docs/workflow.md) — end-to-end operator workflow and the
   PIN-sequence detail diagram.
 - [docs/problem_statement.md](docs/problem_statement.md) — the original
