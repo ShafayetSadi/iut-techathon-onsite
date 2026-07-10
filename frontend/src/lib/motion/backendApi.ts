@@ -82,6 +82,7 @@ export async function solveIk(
 export async function jogCartesian(
   delta: Vec3,
   jointAngles: number[],
+  options?: { includeTrajectory?: boolean },
 ): Promise<IkResponse> {
   const res = await fetch(`${BACKEND_URL}/api/motion/jog`, {
     method: 'POST',
@@ -89,6 +90,7 @@ export async function jogCartesian(
     body: JSON.stringify({
       delta,
       currentJoints: jointArrayToMap(jointAngles),
+      ...(options?.includeTrajectory == null ? {} : { includeTrajectory: options.includeTrajectory }),
     }),
   });
   return parseBackendResponse(res);

@@ -34,10 +34,10 @@ class IKSolveResponse(BaseModel):
 class JogRequest(BaseModel):
     current_joints: dict[str, float] = Field(alias="currentJoints")
     delta: Vector3
+    include_trajectory: bool = Field(default=True, alias="includeTrajectory")
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
 class MotionCommandResponse(IKSolveResponse):
     command: str | None = None
-

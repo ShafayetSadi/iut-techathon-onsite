@@ -375,7 +375,9 @@ export const useMotionStore = create<MotionState>((set, get) => {
               });
             }
             set({ mode: "jog", status: "moving" });
-            const response = await jogCartesian(cmd.delta, get().jointAngles);
+            const response = await jogCartesian(cmd.delta, get().jointAngles, {
+              includeTrajectory: cmd.continuous !== true,
+            });
             logBackend(
               commandId,
               `${response.success ? "ok" : "fail"} (${response.reason ?? "cartesian jog"})`,

@@ -66,19 +66,7 @@ source repository (application code, system diagrams, electrical schematic).
 
 ![Live dashboard](docs/dashboard.jpg)
 
-The dashboard updates every frame straight from the motion store:
-
-- **Interactive URDF viewer** — a Three.js host reproducing the
-  [gkjohnson/urdf-loaders](https://github.com/gkjohnson/urdf-loaders) viewer,
-  tailored to this arm: orbit/zoom, **drag any joint to rotate it**, hover
-  highlight, collision-geometry toggle, ignore-limits, auto-rotate.
-- **Joint & end-effector readouts** — joint angles (deg/rad) and end-effector
-  XYZ, live.
-- **Mode/status pills** and a **scrolling event log** for every dispatched
-  command, accept, reject, and backend response.
-- **6-key test panel** — rendered at the exact `key.config.json` coordinates,
-  with digit labels and a magenta **test marker** at key "1" for the
-  coordinate-frame sanity check.
+Live: http://137.184.201.76:3000/
 
 ## Architecture
 
@@ -350,6 +338,7 @@ ground.
 
 - Architecture and rationale: [docs/phase5-electrical-schematic-brief.md](docs/phase5-electrical-schematic-brief.md)
 - Ready-to-run Wokwi project + setup instructions: [hardware/wokwi/README.md](hardware/wokwi/README.md)
+- Live Wokwi simulation: https://wokwi.com/projects/469141524183502849
 
 ## Validation
 
