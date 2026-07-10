@@ -19,3 +19,13 @@ def test_panel_keys_endpoint() -> None:
     assert payload["frame"] == "base_link"
     assert payload["units"] == "meters"
     assert [key["digit"] for key in payload["keys"]] == ["1", "2", "3", "4", "5", "6"]
+
+
+def test_panel_config_endpoint_returns_source_shape() -> None:
+    response = asyncio.run(_request("GET", "/api/panel/config"))
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["frame"] == "base_link"
+    assert payload["units"] == "meters"
+    assert sorted(payload["keys"]) == ["1", "2", "3", "4", "5", "6"]

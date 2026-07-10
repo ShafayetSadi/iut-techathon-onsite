@@ -12,8 +12,11 @@
  * world setup. This is the mitigation for "Risk A — coordinate frames".
  */
 
-export const URDF_URL = '/urdf/6_dof_arm.urdf';
-export const KEY_CONFIG_URL = '/config/key.config.json';
+export const BACKEND_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, '') || 'http://localhost:8000';
+
+export const URDF_URL = `${BACKEND_URL}/api/robot/urdf`;
+export const KEY_CONFIG_URL = `${BACKEND_URL}/api/panel/config`;
 
 /** URDF is in meters; key.config.json is in meters. No unit conversion needed. */
 export const UNITS = 'meters' as const;
@@ -64,8 +67,8 @@ export const JOINT_INDEX: Record<string, number> = Object.fromEntries(
 export const TOUCH_TOLERANCE_M = 0.005;
 
 /**
- * Rough reachable radius of the stylus tip from the base, in meters. Sum of the
- * link lengths (0.25*4 + 0.15*2 + stylus ~0.263). Used by the workspace-bounds
- * safety check as a coarse, deterministic sanity gate before IK runs.
+ * Coarse frontend workspace bound in meters. Keep this aligned with the backend
+ * ROBOT_WORKSPACE_RADIUS_M default so frontend validation does not reject poses
+ * that the backend can solve or display, including the neutral stylus-tip pose.
  */
-export const MAX_REACH_M = 1.3;
+export const MAX_REACH_M = 1.7;

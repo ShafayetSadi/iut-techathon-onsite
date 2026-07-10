@@ -1,5 +1,7 @@
 from fastapi import APIRouter
+from fastapi.responses import Response
 
+from app.core.config import get_settings
 from app.dependencies import get_robot_model, get_state_store
 from app.robot.urdf_loader import RobotModel
 from app.schemas.robot import JointInfo, JointLimit, RobotModelResponse, RobotState
@@ -35,3 +37,13 @@ async def robot_model() -> RobotModelResponse:
 @router.get("/state", response_model=RobotState)
 async def robot_state() -> dict[str, object]:
     return get_state_store().snapshot()
+
+
+@router.get("/urdf")
+async def robot_urdf() -> Response:
+    path = get_settings().urdf_path.resolve()
+    return Response(
+        content=path.read_text(),
+        media_type="application/xml",
+        headers={"Content-Disposition": 'inline; filename="6_dof_arm.urdf"'},
+    )

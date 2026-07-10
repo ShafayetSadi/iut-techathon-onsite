@@ -12,11 +12,13 @@ class PanelService:
     def __init__(self, config_path: Path) -> None:
         self.config_path = config_path.resolve()
 
-    def get_keys(self) -> PanelKeysResponse:
+    def get_config(self) -> dict[str, object]:
         if not self.config_path.exists():
             raise ValidationError(f"Panel config not found: {self.config_path}")
+        return json.loads(self.config_path.read_text())
 
-        data = json.loads(self.config_path.read_text())
+    def get_keys(self) -> PanelKeysResponse:
+        data = self.get_config()
         keys = [
             PanelKey(digit=digit, position=Vector3(x=value["x"], y=value["y"], z=value["z"]))
             for digit, value in sorted(data["keys"].items())
@@ -27,4 +29,3 @@ class PanelService:
             approach_axis=data.get("approach_axis", "-z"),
             keys=keys,
         )
-
