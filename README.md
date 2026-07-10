@@ -151,7 +151,7 @@ layer only ever *proposes* a plan — it never touches the robot directly.
 flowchart TD
     Speech[Speech or text] --> Matcher[STT + deterministic matcher]
     Matcher -->|matched| Command[MotionCommand]
-    Matcher -->|ambiguous / compound| AgentAPI[/api/agent/interpret]
+    Matcher -->|ambiguous / compound| AgentAPI[Agent API]
 
     AgentAPI --> LLM[OpenRouter + tools]
     LLM --> Draft[Draft plan]
