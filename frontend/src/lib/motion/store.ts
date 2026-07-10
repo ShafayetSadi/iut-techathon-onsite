@@ -150,14 +150,10 @@ export const useMotionStore = create<MotionState>((set, get) => ({
         return await get().applyIkResponse(commandId, response, 'IK target reached.');
       }
       case 'jog_cartesian': {
-        const delta = {
-          x: cmd.axis === 'x' ? cmd.delta : 0,
-          y: cmd.axis === 'y' ? cmd.delta : 0,
-          z: cmd.axis === 'z' ? cmd.delta : 0,
-        };
         set({ mode: 'jog', status: 'moving' });
-        const response = await jogCartesian(delta, get().jointAngles);
-        return await get().applyIkResponse(commandId, response, `Jogged ${cmd.axis.toUpperCase()} ${(cmd.delta * 1000).toFixed(0)} mm.`);
+        const response = await jogCartesian(cmd.delta, get().jointAngles);
+        const mag = Math.hypot(cmd.delta.x, cmd.delta.y, cmd.delta.z) * 1000;
+        return await get().applyIkResponse(commandId, response, `Jogged ${mag.toFixed(1)} mm.`);
       }
       case 'touch_key': {
         const target = await getPanelKeyPosition(cmd.key);

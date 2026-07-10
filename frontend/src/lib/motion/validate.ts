@@ -74,8 +74,8 @@ export function validateCommand(cmd: MotionCommand): ValidationResult {
       return withinWorkspace(cmd.target);
 
     case 'jog_cartesian':
-      if (!Number.isFinite(cmd.delta)) {
-        return reject('malformed', 'Jog delta is not a finite number.');
+      if (![cmd.delta.x, cmd.delta.y, cmd.delta.z].every(Number.isFinite)) {
+        return reject('malformed', 'Jog delta contains a non-finite coordinate.');
       }
       return OK;
 

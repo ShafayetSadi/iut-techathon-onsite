@@ -18,7 +18,14 @@ export default function CartesianControls() {
   const [target, setTarget] = useState({ x: '550', y: '-50', z: '50' });
 
   const jog = (axis: 'x' | 'y' | 'z', delta: number) => {
-    void dispatch({ type: 'jog_cartesian', axis, delta });
+    void dispatch({
+      type: 'jog_cartesian',
+      delta: {
+        x: axis === 'x' ? delta : 0,
+        y: axis === 'y' ? delta : 0,
+        z: axis === 'z' ? delta : 0,
+      },
+    });
   };
 
   const moveTo = () => {

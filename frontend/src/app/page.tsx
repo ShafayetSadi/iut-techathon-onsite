@@ -8,6 +8,8 @@ import EventLog from '@/components/dashboard/EventLog';
 import JointSliders from '@/components/viewer/JointSliders';
 import ViewerControls from '@/components/viewer/ViewerControls';
 import CartesianControls, { KeyTouchControls } from '@/components/viewer/CartesianControls';
+import Joystick from '@/components/controls/Joystick';
+import KeyboardJog from '@/components/controls/KeyboardJog';
 
 // The scene touches WebGL / window on mount, so it is client-only.
 const RobotScene = dynamic(() => import('@/components/scene/RobotScene'), {
@@ -31,6 +33,9 @@ export default function Home() {
 
       <main className="layout">
         <aside className="panel panel--left">
+          <h2 className="panel__h">Tip jog · joystick</h2>
+          <Joystick />
+          <KeyboardJog />
           <h2 className="panel__h">Joint control</h2>
           <JointSliders />
           <h2 className="panel__h">IK target</h2>
