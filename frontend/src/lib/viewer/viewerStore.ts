@@ -24,7 +24,6 @@ export interface ViewerState {
   showCollision: boolean;
   useDegrees: boolean;
   showKeyLabels: boolean;
-  showTestMarker: boolean;
   showEEMarker: boolean;
   autoRotate: boolean;
   jogStepMm: JogStepMm;
@@ -41,7 +40,6 @@ type BooleanViewerKey =
   | 'showCollision'
   | 'useDegrees'
   | 'showKeyLabels'
-  | 'showTestMarker'
   | 'showEEMarker'
   | 'autoRotate';
 
@@ -49,7 +47,6 @@ export const useViewerStore = create<ViewerState>((set, get) => ({
   showCollision: false,
   useDegrees: true,
   showKeyLabels: true,
-  showTestMarker: true,
   showEEMarker: true,
   autoRotate: false,
   jogStepMm: 10,

@@ -37,7 +37,6 @@ export default function ViewerControls() {
         <div className="controls__grid">
           <Toggle label="Key labels" k="showKeyLabels" />
           <Toggle label="EE marker" k="showEEMarker" />
-          <Toggle label="Test marker" k="showTestMarker" />
           <Toggle label="Collision" k="showCollision" />
         </div>
       </div>
