@@ -55,6 +55,19 @@ class IKSolver:
             reason=f"IK did not converge within {self.tolerance_m:.3f}m tolerance",
         )
 
+    def solve_local(self, target: np.ndarray, current_joints: dict[str, float]) -> IKResult:
+        result = self._solve_from_seed(target, current_joints)
+        if result.success:
+            return result
+        return IKResult(
+            success=False,
+            joints=result.joints,
+            tip=result.tip,
+            error_meters=result.error_meters,
+            iterations=result.iterations,
+            reason=f"IK did not converge within {self.tolerance_m:.3f}m tolerance",
+        )
+
     def _solve_from_seed(self, target: np.ndarray, seed: dict[str, float]) -> IKResult:
         joints = clamp_joint_map(self.model, seed)
         names = self.model.controlled_joint_names
@@ -125,4 +138,3 @@ class IKSolver:
             seeds.append(seed)
 
         return [clamp_joint_map(self.model, seed) for seed in seeds]
-

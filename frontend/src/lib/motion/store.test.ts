@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { jogSuccessLog, tipDistanceMm } from './store';
+import { jogResponseLog, jogSuccessLog, tipDistanceMm } from './store';
 
 describe('jog movement log helpers', () => {
   it('measures actual tip displacement in millimeters', () => {
@@ -16,5 +16,11 @@ describe('jog movement log helpers', () => {
 
   it('does not invent movement when the backend omits a tip', () => {
     expect(jogSuccessLog(null)).toBe('Jogged n/a mm.');
+  });
+
+  it('uses backend jog reasons for blocked movement', () => {
+    expect(jogResponseLog({ reason: 'Jog blocked: requested direction is outside reach.' }, 0)).toBe(
+      'Jog blocked: requested direction is outside reach.',
+    );
   });
 });

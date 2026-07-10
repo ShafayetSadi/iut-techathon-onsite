@@ -145,6 +145,10 @@ export function jogSuccessLog(actualMm: number | null): string {
   return `Jogged ${actualMm == null ? 'n/a' : actualMm.toFixed(1)} mm.`;
 }
 
+export function jogResponseLog(response: Pick<IkResponse, 'reason'>, actualMm: number | null): string {
+  return response.reason ?? jogSuccessLog(actualMm);
+}
+
 export const useMotionStore = create<MotionState>((set, get) => ({
   jointAngles: new Array(NUM_JOINTS).fill(0),
   jointLimits: JOINT_LIMITS,
@@ -213,7 +217,8 @@ export const useMotionStore = create<MotionState>((set, get) => ({
         set({ mode: 'jog', status: 'moving' });
         const response = await jogCartesian(cmd.delta, get().jointAngles);
         const actualMm = response.tip ? tipDistanceMm(before, response.tip) : null;
-        return await get().applyIkResponse(commandId, response, jogSuccessLog(actualMm), {
+        const successLog = jogResponseLog(response, actualMm);
+        return await get().applyIkResponse(commandId, response, successLog, {
           animateTrajectory: cmd.continuous !== true,
         });
       }

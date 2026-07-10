@@ -1,9 +1,11 @@
 import asyncio
+from math import radians
 
 import httpx
 
 from app.dependencies import get_motion_planner
 from app.main import app
+from app.robot.kinematics import forward_kinematics
 from app.schemas.common import Vector3
 
 
@@ -128,6 +130,51 @@ def test_motion_planner_jog_moves_for_continuous_tick_sized_delta() -> None:
     assert response.error_meters is not None
     assert response.error_meters <= 0.002
     assert response.tip["x"] > before.tip["x"] + 0.003
+
+
+def test_motion_planner_jog_accepts_useful_near_miss_at_tolerance_edge() -> None:
+    planner = get_motion_planner()
+    angles_deg = [-0.6, -23.6, -0.3, -37.7, 0.1, -2.8, 0.0]
+    current = dict(zip(planner.model.controlled_joint_names, [radians(value) for value in angles_deg], strict=True))
+
+    response = planner.jog(current, Vector3(x=-0.005, y=0.0, z=0.0))
+
+    assert response.success, response.reason
+    assert response.joints is not None
+    assert response.tip is not None
+    assert response.error_meters == 0.005
+    assert response.tip["x"] > -0.48
+    assert abs(response.joints["joint_1"]) < radians(1)
+
+
+def test_motion_planner_jog_noops_when_near_miss_would_drift_down() -> None:
+    planner = get_motion_planner()
+    angles_deg = [0.5, -31.4, 0.0, 0.2, 0.0, 0.0, 0.0]
+    current = dict(zip(planner.model.controlled_joint_names, [radians(value) for value in angles_deg], strict=True))
+    before = forward_kinematics(planner.model, current).tip
+
+    response = planner.jog(current, Vector3(x=-0.005, y=0.0, z=0.0))
+
+    assert response.success, response.reason
+    assert response.joints == current
+    assert response.error_meters == 0.005
+    assert response.reason is not None
+    assert "outside the arm's reachable workspace" in response.reason
+    assert response.tip is not None
+    assert abs(response.tip["z"] - before[2]) <= 0.001
+
+
+def test_motion_planner_solve_target_stays_strict_at_jog_tolerance_edge() -> None:
+    planner = get_motion_planner()
+    angles_deg = [-0.6, -23.6, -0.3, -37.7, 0.1, -2.8, 0.0]
+    current = dict(zip(planner.model.controlled_joint_names, [radians(value) for value in angles_deg], strict=True))
+
+    response = planner.solve_target(Vector3(x=-0.4851, y=0.0042, z=1.3956), current)
+
+    assert response.success is False
+    assert response.joints is None
+    assert response.error_meters is not None
+    assert response.error_meters > 0.002
 
 
 def test_robot_urdf_endpoint_serves_source_model() -> None:
