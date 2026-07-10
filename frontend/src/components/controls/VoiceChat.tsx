@@ -76,6 +76,9 @@ function AssistantMessage({ entry }: { entry: TranscriptEntry }) {
   if (entry.status === 'error') {
     return <p className="voice-chat__text">{entry.text}</p>;
   }
+  if (entry.agentPending) {
+    return <p className="voice-chat__text">Interpreting with the agent…</p>;
+  }
 
   // An agent entry always carries an `unmatched` or `ambiguous` resolution —
   // that is exactly what routed it to the agent (see execute.ts). So it must be
@@ -124,6 +127,7 @@ function AssistantMessage({ entry }: { entry: TranscriptEntry }) {
 function assistantTone(entry: TranscriptEntry): string {
   if (entry.status === 'pending') return 'pending';
   if (entry.status === 'error') return 'error';
+  if (entry.agentPending) return 'pending';
 
   const agent = entry.agentResult;
   if (agent) {
