@@ -29,9 +29,9 @@ import { useMotionStore } from '@/lib/motion/store';
 import { useViewerStore } from '@/lib/viewer/viewerStore';
 import { JOINT_NAMES } from '@/config/robot.config';
 
-const HIGHLIGHT = new THREE.Color('#f2991a'); // amber, matches the arm accents
-const KEY_COLOR = new THREE.Color('#3a7bd5');
-const KEY_COLOR_1 = new THREE.Color('#e94b6a'); // key "1" = also the test marker anchor
+const HIGHLIGHT = new THREE.Color('#d97757'); // clay accent, matches the UI chrome
+const KEY_COLOR = new THREE.Color('#7fa1c4');
+const KEY_COLOR_1 = new THREE.Color('#c96d63'); // key "1" = also the test marker anchor
 const KEY_VISUAL_WIDTH_M = 0.03;
 const KEY_VISUAL_DEPTH_M = 0.03;
 const KEY_VISUAL_HEIGHT_M = 0.016;
@@ -61,10 +61,10 @@ function makeLabelSprite(text: string): THREE.Sprite {
   const ctx = canvas.getContext('2d')!;
   ctx.beginPath();
   ctx.arc(size / 2, size / 2, size / 2 - 4, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(11,14,17,0.85)';
+  ctx.fillStyle = 'rgba(23,21,19,0.88)';
   ctx.fill();
   ctx.lineWidth = 6;
-  ctx.strokeStyle = '#f2991a';
+  ctx.strokeStyle = '#d97757';
   ctx.stroke();
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 72px Inter, system-ui, sans-serif';
@@ -91,8 +91,8 @@ export default function RobotScene() {
     THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#0b0e11');
-    scene.fog = new THREE.Fog('#0b0e11', 4, 12);
+    scene.background = new THREE.Color('#171513');
+    scene.fog = new THREE.Fog('#171513', 4, 12);
 
     const width = mount.clientWidth || 800;
     const height = mount.clientHeight || 600;
@@ -124,13 +124,23 @@ export default function RobotScene() {
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     key.shadow.camera.near = 0.1;
-    key.shadow.camera.far = 8;
-    const s = 1.6;
-    key.shadow.camera.left = -s;
-    key.shadow.camera.right = s;
-    key.shadow.camera.top = s;
-    key.shadow.camera.bottom = -s;
-    key.shadow.bias = -0.0004;
+    key.shadow.camera.far = 4;
+    // Frustum tightened to the arm's actual reach (was ±1.6m — mostly empty
+    // space around a ~0.15m-radius arm, which starved shadow-map resolution
+    // right where it mattered: the small sphere/cylinder joint hubs).
+    key.shadow.camera.left = -0.9;
+    key.shadow.camera.right = 0.9;
+    key.shadow.camera.top = 1.7;
+    key.shadow.camera.bottom = -0.1;
+    // Depth bias alone wasn't enough on the curved, overlapping joint-hub
+    // geometry (sphere hub flush against cylinder link) — it self-shadowed
+    // in a banded/hatched pattern ("shadow acne"). normalBias offsets the
+    // sample along the surface normal instead of view depth, which is the
+    // correct fix for acne on curved surfaces.
+    key.shadow.bias = -0.0015;
+    key.shadow.normalBias = 0.015;
+    key.target.position.set(0, 0, 0.55);
+    scene.add(key.target);
     scene.add(key);
 
     // ── Ground + grid (XY plane at z=0 in the Z-up world) ─────────────────
@@ -141,7 +151,7 @@ export default function RobotScene() {
     ground.receiveShadow = true;
     scene.add(ground);
 
-    const grid = new THREE.GridHelper(12, 48, 0x2a3038, 0x1b2026);
+    const grid = new THREE.GridHelper(12, 48, 0x3a332a, 0x241f1a);
     grid.rotation.x = Math.PI / 2; // lay flat in XY for the Z-up world
     (grid.material as THREE.Material).transparent = true;
     (grid.material as THREE.Material).opacity = 0.6;
@@ -154,14 +164,14 @@ export default function RobotScene() {
     // ── Markers that live outside the robot ──────────────────────────────
     const eeMarker = new THREE.Mesh(
       new THREE.SphereGeometry(0.012, 16, 16),
-      new THREE.MeshStandardMaterial({ color: '#3ddc84', emissive: '#0f5c33', emissiveIntensity: 0.6 }),
+      new THREE.MeshStandardMaterial({ color: '#87a878', emissive: '#2b3a24', emissiveIntensity: 0.6 }),
     );
     eeMarker.renderOrder = 5;
     scene.add(eeMarker);
 
     const targetMarker = new THREE.Mesh(
       new THREE.TorusGeometry(0.02, 0.004, 12, 24),
-      new THREE.MeshStandardMaterial({ color: '#f2c94c', emissive: '#5c4a0f', emissiveIntensity: 0.6 }),
+      new THREE.MeshStandardMaterial({ color: '#d3a75c', emissive: '#453a22', emissiveIntensity: 0.6 }),
     );
     targetMarker.visible = false;
     scene.add(targetMarker);

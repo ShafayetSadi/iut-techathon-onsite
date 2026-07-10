@@ -22,12 +22,18 @@ export async function loadRobot(url: string = URDF_URL): Promise<URDFRobot> {
 
   const robot = await loader.loadAsync(url);
 
-  // Nice-to-have: cast shadows from every mesh in the arm.
+  // Cast shadows onto the ground, but do NOT receive shadows on the robot's
+  // own meshes. Several joints are built from a sphere hub deliberately
+  // interpenetrating its cylinder link (by URDF design, for the chunky hub
+  // look) — with receiveShadow on, those overlapping primitives shadow each
+  // other at the seam and produce a hatched "shadow acne" artifact that no
+  // amount of bias tuning fully removes, since the geometry itself is the
+  // cause. The ground plane (in RobotScene) still receives the arm's shadow.
   robot.traverse((child) => {
     const anyChild = child as { isMesh?: boolean; castShadow?: boolean; receiveShadow?: boolean };
     if (anyChild.isMesh) {
       anyChild.castShadow = true;
-      anyChild.receiveShadow = true;
+      anyChild.receiveShadow = false;
     }
   });
 

@@ -32,7 +32,6 @@ export default function JointSliders() {
         const hi = ignoreLimits ? WIDE : limHi;
         const val = jointAngles[i] ?? 0;
         const disp = useDegrees ? val * RAD2DEG : val;
-        const mult = useDegrees ? RAD2DEG : 1;
         const isHover = hovered === j.name;
 
         return (
@@ -46,20 +45,20 @@ export default function JointSliders() {
               <span className="slider__name" title={j.name}>
                 {j.label}
               </span>
-              <input
-                className="slider__num"
-                type="number"
-                step={useDegrees ? 1 : 0.01}
-                min={lo * mult}
-                max={hi * mult}
-                value={Number(disp.toFixed(useDegrees ? 1 : 3))}
-                disabled={isAutoRunning}
-                onChange={(e) => {
-                  const raw = parseFloat(e.target.value);
-                  if (!isAutoRunning && Number.isFinite(raw)) setJoint(i, useDegrees ? raw * DEG2RAD : raw);
-                }}
-              />
-              <span className="slider__unit">{useDegrees ? '°' : 'rad'}</span>
+              <div className="slider__value">
+                <input
+                  className="slider__num"
+                  type="text"
+                  inputMode="decimal"
+                  aria-label={`${j.label} angle`}
+                  value={Number(disp.toFixed(useDegrees ? 1 : 3))}
+                  onChange={(e) => {
+                    const raw = parseFloat(e.target.value);
+                    if (Number.isFinite(raw)) setJoint(i, useDegrees ? raw * DEG2RAD : raw);
+                  }}
+                />
+                <span className="slider__unit">{useDegrees ? '°' : 'rad'}</span>
+              </div>
             </div>
             <input
               className="slider__range"
