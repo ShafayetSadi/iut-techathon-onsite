@@ -341,26 +341,39 @@ body {
   text-overflow: ellipsis;
   color: var(--text);
 }
-.slider__num {
-  width: 62px;
+.slider__value {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   background: var(--bg);
   border: 1px solid var(--border);
-  color: var(--text);
   border-radius: 6px;
-  padding: 4px 7px;
+  padding: 0 8px;
+  min-width: 72px;
+  transition: border-color 0.12s var(--ease);
+}
+.slider__value:focus-within {
+  border-color: var(--clay);
+}
+.slider__num {
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  padding: 4px 0;
   font-family: var(--mono);
   font-size: 12px;
   text-align: right;
-  transition: border-color 0.12s var(--ease);
 }
 .slider__num:focus-visible {
   outline: none;
-  border-color: var(--clay);
 }
 .slider__unit {
+  flex-shrink: 0;
   font-size: 10px;
   color: var(--text-faint);
-  width: 22px;
+  user-select: none;
 }
 
 /* custom range slider — track + thumb, all browsers */
