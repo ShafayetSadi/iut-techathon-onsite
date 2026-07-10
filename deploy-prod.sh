@@ -17,11 +17,10 @@ fi
 echo "[2/5] Stopping existing containers..."
 docker compose -f "$COMPOSE_FILE" down
 
-echo "[3/5] Rebuilding frontend with production backend URL..."
-docker compose -f "$COMPOSE_FILE" build --no-cache frontend
+echo "[3/5] Rebuilding and starting all services..."
+docker compose -f "$COMPOSE_FILE" up -d --build
 
-echo "[4/5] Starting services..."
-docker compose -f "$COMPOSE_FILE" up -d
+echo "[4/5] Services started."
 
 echo "[5/5] Service status:"
 docker compose -f "$COMPOSE_FILE" ps
