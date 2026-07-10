@@ -5,12 +5,14 @@ import ModeStatus from '@/components/dashboard/ModeStatus';
 import JointReadout from '@/components/dashboard/JointReadout';
 import EEReadout from '@/components/dashboard/EEReadout';
 import EventLog from '@/components/dashboard/EventLog';
+import TranscriptLog from '@/components/dashboard/TranscriptLog';
 import JointSliders from '@/components/viewer/JointSliders';
 import ViewerControls from '@/components/viewer/ViewerControls';
 import CartesianControls, { KeyTouchControls } from '@/components/viewer/CartesianControls';
 import Joystick from '@/components/controls/Joystick';
 import KeyboardJog from '@/components/controls/KeyboardJog';
 import PinEntryControls from '@/components/controls/PinEntryControls';
+import VoiceControls from '@/components/controls/VoiceControls';
 
 // The scene touches WebGL / window on mount, so it is client-only.
 const RobotScene = dynamic(() => import('@/components/scene/RobotScene'), {
@@ -30,6 +32,7 @@ export default function Home() {
           </div>
         </div>
         <div className="topbar__phase">Phase 4 — Autonomous PIN Entry</div>
+        <div className="topbar__phase">Phase 3 — Talk to the Arm</div>
       </header>
 
       <main className="layout">
@@ -37,6 +40,8 @@ export default function Home() {
           <h2 className="panel__h">Tip jog · joystick</h2>
           <Joystick />
           <KeyboardJog />
+          <h2 className="panel__h">Voice</h2>
+          <VoiceControls />
           <h2 className="panel__h">Joint control</h2>
           <JointSliders />
           <h2 className="panel__h">IK target</h2>
@@ -59,6 +64,7 @@ export default function Home() {
           <EEReadout />
           <JointReadout />
           <EventLog />
+          <TranscriptLog />
         </aside>
       </main>
     </div>

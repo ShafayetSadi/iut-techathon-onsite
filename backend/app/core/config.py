@@ -17,6 +17,15 @@ class Settings(BaseSettings):
     min_z_m: float = -0.25
     max_z_m: float = 1.6
 
+    # Speech-to-text. The key never reaches the browser: Next.js inlines any
+    # NEXT_PUBLIC_* var into the client bundle, so the audio round-trips through
+    # this backend instead. Set ROBOT_ELEVENLABS_API_KEY (note the env prefix).
+    elevenlabs_api_key: str | None = None
+    elevenlabs_stt_url: str = "https://api.elevenlabs.io/v1/speech-to-text"
+    elevenlabs_stt_model: str = "scribe_v1"
+    elevenlabs_timeout_s: float = 30.0
+    max_audio_bytes: int = 10 * 1024 * 1024
+
     model_config = SettingsConfigDict(env_prefix="ROBOT_", env_file=".env")
 
 

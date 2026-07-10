@@ -53,7 +53,7 @@ def get_pin_service() -> PinService:
 
 @lru_cache
 def get_voice_service() -> VoiceService:
-    return VoiceService()
+    return VoiceService(get_settings())
 
 
 @lru_cache
