@@ -2,25 +2,11 @@
 
 /**
  * useContinuousJog.ts — shared rate-limited dispatcher for continuous jog
- * input (on-screen joystick + keyboard). See docs/phase2-frontend-brief.md §3.
- *
- * Every jog is a full HTTP round-trip to the backend IK solver. Firing one per
- * animation frame (60/s) would flood it and let responses race each other — an
- * older request resolving after a newer one would snap the arm backward for a
- * frame. Instead this keeps ONE shared ticker with at-most-one request in
- * flight at a time: a tick is skipped while a request is outstanding, so the
- * next tick always uses whatever direction is current when it fires. That's
- * "latest direction wins" without needing per-request sequence bookkeeping.
- *
- * The ticker/gate live at module scope (not inside the hook) so every
- * component calling `useContinuousJog()` — the joystick, the keyboard
- * listener, anything added later — shares the exact same dispatcher. Two
- * independent tickers would each individually rate-limit themselves but could
- * still overlap *each other's* requests, which defeats the point.
+ * input (on-screen joystick + keyboard).
  */
 
 import { useCallback, useEffect, useMemo } from "react";
-import { useMotionStore } from "./store";
+import { registerJogCanceller, useMotionStore } from "./store";
 import { jogStepMeters, useViewerStore } from "../viewer/viewerStore";
 import type { Vec3 } from "./commands";
 
@@ -50,7 +36,10 @@ function hasInput(v: Vec3): boolean {
   return vectorMagnitude(v) >= EPSILON;
 }
 
-export function continuousJogDelta(unit: Vec3, stepMeters = JOG_STEP_M): Vec3 | null {
+export function continuousJogDelta(
+  unit: Vec3,
+  stepMeters = JOG_STEP_M,
+): Vec3 | null {
   const mag = vectorMagnitude(unit);
   if (mag < EPSILON) return null;
   const scale = stepMeters / mag;
@@ -59,7 +48,11 @@ export function continuousJogDelta(unit: Vec3, stepMeters = JOG_STEP_M): Vec3 | 
 
 function isAutonomousPinRunning(): boolean {
   const state = useMotionStore.getState();
-  return state.mode === "auto" && state.status === "moving" && state.activePin !== null;
+  return (
+    state.mode === "auto" &&
+    state.status === "moving" &&
+    state.activePin !== null
+  );
 }
 
 function beginGesture() {
@@ -90,13 +83,21 @@ function updateVector(unit: Vec3, fine = false) {
   }
 }
 
+export function cancelContinuousJog() {
+  currentVector = ZERO;
+  currentFine = false;
+  gestureActive = false;
+}
+
 function tick() {
-  if (inFlight) return; // previous jog request still in flight — skip this tick
+  if (inFlight) return;
   if (isAutonomousPinRunning()) {
     currentVector = ZERO;
     return;
   }
-  const stepM = currentFine ? Math.min(currentStepMeters, FINE_JOG_STEP_M) : currentStepMeters;
+  const stepM = currentFine
+    ? Math.min(currentStepMeters, FINE_JOG_STEP_M)
+    : currentStepMeters;
   const delta = continuousJogDelta(currentVector, stepM);
   if (!delta) return;
 
@@ -125,13 +126,14 @@ function acquireTicker() {
   }
 }
 
-function releaseTicker() {
+function releaseTicker(): number {
   subscribers = Math.max(0, subscribers - 1);
   if (subscribers === 0 && intervalId != null) {
     clearInterval(intervalId);
     intervalId = null;
     updateVector(ZERO);
   }
+  return subscribers;
 }
 
 export interface ContinuousJogController {
@@ -147,8 +149,11 @@ export function useContinuousJog(): ContinuousJogController {
   }, [jogStepMm]);
 
   useEffect(() => {
+    registerJogCanceller(cancelContinuousJog);
     acquireTicker();
-    return () => releaseTicker();
+    return () => {
+      if (releaseTicker() === 0) registerJogCanceller(null);
+    };
   }, []);
 
   const setVector = useCallback((unit: Vec3, options?: { fine?: boolean }) => {

@@ -15,6 +15,11 @@
 
 /** Multi-word forms, replaced before tokenizing. */
 const PHRASES: [RegExp, string][] = [
+  // Speech-to-text renders "forearm" as "four arm" often enough that it must be
+  // repaired here: this runs before `expandNumberWords`, which would otherwise
+  // turn "four" into 4 and leave the matcher scoring "rotate {n} arm {n} degrees".
+  [/\bfour arm\b/g, 'forearm'],
+  [/\bfor arm\b/g, 'forearm'],
   [/\ba couple of\b/g, '2'],
   [/\ba couple\b/g, '2'],
   [/\ba few\b/g, '3'],
@@ -25,6 +30,8 @@ const PHRASES: [RegExp, string][] = [
   [/\bcounter clockwise\b/g, 'left'],
   [/\bcounterclockwise\b/g, 'left'],
   [/\bclockwise\b/g, 'right'],
+  // Common speech-to-text miss for the J6 label "tool roll".
+  [/\bto roll\b/g, 'tool roll'],
 ];
 
 /**
@@ -105,6 +112,11 @@ function expandNumberWords(tokens: string[]): string[] {
  */
 export function normalize(raw: string): string {
   let text = raw.toLowerCase();
+
+  // Speech-to-text tags non-speech audio: "(dishes clanking)", "(laughter)".
+  // Strip whole tags first — the punctuation pass below would otherwise dissolve
+  // the brackets and leave the words behind, to be scored as if they were spoken.
+  text = text.replace(/\([^()]*\)/g, ' ').replace(/\[[^[\]]*\]/g, ' ');
 
   // Hyphens join words we want split ("thirty-five", "counter-clockwise").
   text = text.replace(/[-_/]/g, ' ');

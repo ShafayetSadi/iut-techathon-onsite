@@ -80,7 +80,50 @@ describe('joint rotations', () => {
       joint: 0,
       value: 45 * DEG,
     });
+    expect(matched('rotate shoulder to thirty degrees').command).toEqual({
+      type: 'set_joint',
+      joint: 1,
+      value: 30 * DEG,
+    });
     expect(matched('center elbow').command).toEqual({ type: 'set_joint', joint: 2, value: 0 });
+  });
+
+  it('accepts descriptive joint aliases', () => {
+    expect(matched('rotate tool roll 30 degrees').command).toEqual({
+      type: 'jog_joint',
+      joint: 5,
+      delta: 30 * DEG,
+    });
+    expect(matched('rotate to roll 30 degrees').command).toEqual({
+      type: 'jog_joint',
+      joint: 5,
+      delta: 30 * DEG,
+    });
+    expect(matched('set wrist pitch to 15 degrees').command).toEqual({
+      type: 'set_joint',
+      joint: 4,
+      value: 15 * DEG,
+    });
+  });
+
+  it('accepts numbered joint names', () => {
+    for (const [raw, joint] of [
+      ['rotate j1 10 degrees', 0],
+      ['rotate j2 20 degrees', 1],
+      ['rotate j3 30 degrees', 2],
+      ['rotate j4 40 degrees', 3],
+      ['rotate j5 50 degrees', 4],
+      ['rotate j6 30 degrees', 5],
+      ['rotate joint 7 10 degrees', 6],
+    ] as const) {
+      expect(matched(raw).command).toMatchObject({ type: 'jog_joint', joint });
+    }
+
+    expect(matched('rotate j2 to 30 degrees').command).toEqual({
+      type: 'set_joint',
+      joint: 1,
+      value: 30 * DEG,
+    });
   });
 
   it('maps every spoken joint name to its canonical index', () => {
