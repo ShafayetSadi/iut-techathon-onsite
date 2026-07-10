@@ -25,7 +25,7 @@ export default function Home() {
     <div className="app">
       <header className="topbar">
         <div className="topbar__brand">
-          <span className="topbar__logo">◈</span>
+          <span className="topbar__logo">V</span>
           <div>
             <div className="topbar__title">Vantage · Dry Run</div>
             <div className="topbar__sub">6-DOF stylus-arm simulator</div>
